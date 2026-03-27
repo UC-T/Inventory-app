@@ -1,0 +1,15 @@
+/* App Shell - Main Layout Styles */
+
+/* Main Content Area */
+.app-main {
+  flex: 1;
+  padding: 1.5rem;
+  overflow: auto;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .app-main {
+    padding: 1rem;
+  }
+}

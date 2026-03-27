@@ -1,0 +1,125 @@
+/* ============================================
+   Categories Page Styles
+   ============================================ */
+
+.categories-page {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.categories-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.category-card {
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  text-align: center;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.category-card:hover {
+  border-color: var(--color-border-light);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.category-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--spacing-md);
+}
+
+.category-icon--primary {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.category-icon--info {
+  background-color: var(--color-info-light);
+  color: var(--color-info);
+}
+
+.category-icon--success {
+  background-color: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.category-icon--warning {
+  background-color: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.category-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.category-count {
+  margin-bottom: var(--spacing-md);
+}
+
+.category-count .count-value {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+}
+
+.category-count .count-label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.category-breakdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.breakdown-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.breakdown-value {
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--color-text-primary);
+}
+
+.breakdown-label {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+}
+
+.breakdown-divider {
+  width: 1px;
+  height: 30px;
+  background-color: var(--color-border);
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .categories-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

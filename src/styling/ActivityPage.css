@@ -1,0 +1,147 @@
+/* ============================================
+   Activity Page Styles
+   ============================================ */
+
+.activity-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.activity-log {
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.log-item {
+  display: flex;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  transition: background-color var(--transition-fast);
+}
+
+.log-item:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.log-item:last-child {
+  border-bottom: none;
+}
+
+.log-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.log-icon.action--checkout,
+.log-icon.action--checkin {
+  background-color: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.log-icon.action--create {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.log-icon.action--update {
+  background-color: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.log-icon.action--delete {
+  background-color: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.log-icon.action--transfer {
+  background-color: var(--color-info-light);
+  color: var(--color-info);
+}
+
+.log-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-xs);
+}
+
+.log-action {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.log-action.action--checkout,
+.log-action.action--checkin {
+  background-color: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.log-action.action--create {
+  background-color: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.log-action.action--update {
+  background-color: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.log-action.action--delete {
+  background-color: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.log-action.action--transfer {
+  background-color: var(--color-info-light);
+  color: var(--color-info);
+}
+
+.log-timestamp {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.log-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.log-description {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin-bottom: var(--spacing-xs);
+}
+
+.log-user {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .log-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
+  }
+}

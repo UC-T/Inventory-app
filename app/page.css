@@ -1,0 +1,46 @@
+/* Dashboard Page Styles */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.dashboard-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dashboard-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+}
+
+.dashboard-description {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+/* Main Content Grid */
+.dashboard-content {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-content {
+    grid-template-columns: 3fr 2fr;
+  }
+}
+
+.dashboard-alerts {
+  min-width: 0;
+}
+
+.dashboard-activity {
+  min-width: 0;
+}
