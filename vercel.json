@@ -2,14 +2,26 @@
   "version": 2,
   "builds": [
     {
-      "src": "manage.py",
+      "src": "backend/manage.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": { 
+        "distDir": "build",
+        "buildCommand": "npm install && npm run build"
+      }
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "manage.py"
+      "dest": "backend/manage.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "frontend/$1"
     }
   ]
 }
