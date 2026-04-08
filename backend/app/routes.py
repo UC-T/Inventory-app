@@ -1,0 +1,411 @@
+from flask import Flask, jsonify, request, Blueprint  # <--- Ensure Blueprint is here # 1. Imports first
+# from .models import db, InventoryItem
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required
+from .models import db, InventoryItem, User, flask_bcrypt, Category, Location, Consumable
+from functools import wraps
+from flask_jwt_extended import get_jwt_identity
+import pandas as pd
+from flask import send_file
+from flask_cors import CORS
+import io
+import os
+
+api = Blueprint('api', __name__)
+
+# app = Flask(__name__)                      # 2. Create 'app' HERE (Crucial!)
+# app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this to a real secret key in production
+# jwt = JWTManager(app)
+# flask_bcrypt.init_app(app)
+# CORS(app) # This allows your frontend to talk to your backend
+
+# # 3. Database Configurations
+# basedir = os.path.abspath(os.path.dirname(__file__))
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'inventory.db')
+# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# db.init_app(app)                           # 4. Initialize DB with app
+
+# --- DEFINE THE DECORATOR HERE (Before the routes) ---
+# Helper Function: Check if the user is an admin
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        if user and user.role == 'admin':
+            return fn(*args, **kwargs)
+        else:
+            return jsonify({"message": "Admins only! Access denied."}), 403
+    return wrapper
+
+# 5. Routes (Always go AFTER app is defined)
+@api.route('/assets', methods=['GET'])
+@jwt_required()
+def get_inventory():
+    items = InventoryItem.query.all()
+    return jsonify([item.to_dict() for item in items]), 200
+
+@api.route('/assets', methods=['POST'])
+@jwt_required()
+def add_item():
+    data = request.get_json()
+    new_item = InventoryItem(
+        name=data['name'],
+        sku=data['sku'],
+        quantity=data['quantity'],
+        price=data['price']
+    )
+    db.session.add(new_item)
+    db.session.commit()
+    return jsonify({"message": "Item added!", "item": new_item.to_dict()}), 201
+
+# ROUTE: Update an item's quantity or price
+@api.route('/assets/<int:item_id>', methods=['PUT'])
+@jwt_required()
+def update_item(item_id):
+    item = InventoryItem.query.get_or_404(item_id)
+    data = request.get_json()
+
+    # Update only the fields provided in the request
+    if 'quantity' in data:
+        item.quantity = data['quantity']
+    if 'price' in data:
+        item.price = data['price']
+    if 'name' in data:
+        item.name = data['name']
+
+    db.session.commit()
+    return jsonify({"message": "Item updated!", "item": item.to_dict()})
+
+# ROUTE: Delete an item
+@api.route('/assets/<int:item_id>', methods=['DELETE'])
+@jwt_required() # <--- This line locks the door!
+def delete_item(item_id):
+    item = InventoryItem.query.get_or_404(item_id)
+    
+    db.session.delete(item)
+    db.session.commit()
+    
+    return jsonify({"message": f"Item {item_id} deleted successfully"}), 200
+
+# ROUTE: Delete an item (Admin Only)
+@api.route('/assets/<int:item_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required # Only an admin can pass this check
+def delete_inventory_item(item_id):
+    item = InventoryItem.query.get_or_404(item_id)
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify({"message": "Item deleted by Admin"})
+
+# ROUTE: Delete a user (Admin Only)
+@api.route('/users/<int:user_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required # Only an admin can pass this check
+def delete_system_user(user_id):
+    user_to_delete = User.query.get_or_404(user_id)
+    db.session.delete(user_to_delete)
+    db.session.commit()
+    return jsonify({"message": f"User {user_to_delete.username} has been removed."})
+
+# ROUTE: Register a new user (Run this once to create your account)
+@api.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+
+    # CHECK: Does this username already exist?
+    existing_user = User.query.filter_by(username=username).first()
+    if existing_user:
+        return jsonify({"message": "Username already taken. Please choose another."}), 400
+
+    # Logic to determine role (First user is Admin)
+    is_first_user = User.query.count() == 0
+    role = 'admin' if is_first_user else 'staff'
+    
+    new_user = User(username=username, role=role)
+    new_user.set_password(password)
+    
+    try:
+        db.session.add(new_user)
+        db.session.commit()
+        return jsonify({"message": f"User created as {role}!"}), 201
+    except Exception as e:
+        db.session.rollback() # Undo the change if something goes wrong
+        return jsonify({"message": "Database error", "error": str(e)}), 500
+
+# ROUTE: Get all registered users (Admin Only)
+@api.route('/users', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_all_users():
+    users = User.query.all()
+    # We return id, username, and role, but NEVER the password_hash
+    output = []
+    for user in users:
+        output.append({
+            "id": user.id,
+            "username": user.username,
+            "role": user.role
+        })
+    return jsonify(output)
+
+# ROUTE: Login to get a Token
+@api.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = User.query.filter_by(username=data['username']).first()
+    
+    if user and user.check_password(data['password']):
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify(access_token=access_token)
+    
+    return jsonify({"message": "Invalid credentials"}), 401
+
+# ROUTE: Get Dashboard Data (Protected)
+@api.route('/dashboard', methods=['GET'])
+@jwt_required()
+def get_dashboard():
+    # 1. Fetch data
+    items = InventoryItem.query.all()
+    consumables = Consumable.query.all()
+    
+    # 2. Logic for Low Stock Alerts
+    alerts = []
+    for item in items:
+        if item.quantity < 5: # Threshold for assets
+            alerts.append({"type": "Asset", "name": item.name, "qty": item.quantity})
+            
+    for con in consumables:
+        if con.quantity <= con.min_threshold:
+            alerts.append({"type": "Consumable", "name": con.name, "qty": con.quantity})
+
+    # 3. Structure the response
+    return jsonify({
+        "summary": {
+            "total_assets": len(items),
+            "total_consumables": len(consumables),
+            "total_alerts": len(alerts)
+        },
+        "alerts": alerts,
+        "recent_assets": [i.to_dict() for i in items[-5:]] # Show last 5 added
+    })
+
+@api.route('/categories', methods=['POST', 'GET'])
+@jwt_required()
+def handle_categories():
+    if request.method == 'POST':
+        name = request.json.get('name')
+        new_cat = Category(name=name)
+        db.session.add(new_cat)
+        db.session.commit()
+        return jsonify({"msg": "Category added"}), 201
+    
+    categories = Category.query.all()
+    return jsonify([{"id": c.id, "name": c.name} for c in categories])
+
+# --- DELETE CATEGORY ---
+@api.route('/categories/<int:cat_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def delete_category_by_id(cat_id):
+    category = Category.query.get_or_404(cat_id)
+    # The backref 'items' will automatically set category_id to NULL in InventoryItem
+    db.session.delete(category)
+    db.session.commit()
+    return jsonify({"message": f"Category '{category.name}' deleted successfully"}), 200
+
+@api.route('/locations', methods=['POST', 'GET'])
+@jwt_required()
+def handle_locations():
+    if request.method == 'POST':
+        name = request.json.get('name')
+        new_loc = Location(name=name)
+        db.session.add(new_loc)
+        db.session.commit()
+        return jsonify({"msg": "Location added"}), 201
+    
+    locations = Location.query.all()
+    return jsonify([{"id": l.id, "name": l.name} for l in locations])
+
+# --- DELETE LOCATION ---
+@api.route('/locations/<int:loc_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def delete_location_by_id(loc_id):
+    # 1. Use .get() for custom JSON error handling
+    location = Location.query.get(loc_id)
+
+    # USE CASE: Resource Missing
+    if not location:
+        return jsonify({
+            "error": "Location not found",
+            "status": 404
+        }), 404
+
+    # 2. USE CASE: Dependency Check (The "Showstopper")
+    # Check if any Assets are still linked to this location
+    linked_assets_count = InventoryItem.query.filter_by(location_id=loc_id).count()
+    
+    if linked_assets_count > 0:
+        return jsonify({
+            "error": "Conflict",
+            "message": f"Cannot delete '{location.name}'. It still has {linked_assets_count} assets assigned to it.",
+            "status": 409
+        }), 409
+
+    # 3. USE CASE: Safe Deletion
+    try:
+        location_name = location.name # Store name before object is deleted
+        db.session.delete(location)
+        db.session.commit()
+        
+        return jsonify({
+            "message": f"Location '{location_name}' deleted successfully",
+            "status": "success"
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "error": "Database error",
+            "details": str(e)
+        }), 500
+
+@api.route('/consumables', methods=['GET', 'POST'])
+@jwt_required()
+def handle_consumables():
+    # ─── USE CASE 1: RETRIEVE ALL CONSUMABLES (GET) ──────────────────
+    if request.method == 'GET':
+        try:
+            consumables = Consumable.query.all()
+            return jsonify([c.to_dict() for c in consumables]), 200
+        except Exception as e:
+            return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
+
+    # ─── USE CASE 2: ADD NEW CONSUMABLE (POST) ───────────────────────
+    if request.method == 'POST':
+        data = request.get_json()
+
+        # 1. Validation: Check for required fields
+        if not data or 'name' not in data or 'quantity' not in data:
+            return jsonify({"error": "Missing required fields", "required": ["name", "quantity"]}), 400
+
+        # 2. Validation: Ensure quantity is a non-negative number
+        try:
+            qty = int(data['quantity'])
+            if qty < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            return jsonify({"error": "Quantity must be a positive integer"}), 400
+
+        try:
+            new_con = Consumable(
+                name=data['name'].strip(), 
+                quantity=qty, 
+                min_threshold=data.get('min_threshold', 5)
+            )
+            db.session.add(new_con)
+            db.session.commit()
+            
+            return jsonify({
+                "message": "Consumable added successfully",
+                "consumable": new_con.to_dict()
+            }), 201
+
+        except IntegrityError:
+            db.session.rollback()
+            return jsonify({"error": "A consumable with this name already exists"}), 409
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": "Database error", "details": str(e)}), 500
+
+# --- DELETE CONSUMABLE ---
+@api.route('/consumables/<int:con_id>', methods=['DELETE'])
+@jwt_required()
+@admin_required
+def delete_consumable_by_id(con_id):
+    consumable = Consumable.query.get_or_404(con_id)
+    # ─── THE ERROR CHECK ──────────────────────────────────────────
+    if not consumable:
+        return jsonify({
+            "error": "Consumable not found",
+            "message": f"No consumable exists with ID: {con_id}",
+            "status": 404
+        }), 404
+    # ──────────────────────────────────────────────────────────────
+    db.session.delete(consumable)
+    db.session.commit()
+    return jsonify({"message": f"Consumable '{consumable.name}' removed"}), 200
+
+@api.route('/report/monthly', methods=['GET'])
+@jwt_required()
+@admin_required # Reports are usually for admins
+def download_monthly_report():
+    # 1. Fetch all data from DB
+    items = InventoryItem.query.all()
+    consumables = Consumable.query.all()
+
+    # 2. Convert Asset data to a List of Dicts
+    asset_data = [{
+        "Name": i.name,
+        "SKU": i.sku,
+        "Quantity": i.quantity,
+        "Price": i.price,
+        "Total Value": i.quantity * i.price,
+        "Location": i.location.name if i.location else "N/A",
+        "Category": i.category.name if i.category else "N/A"
+    } for i in items]
+
+    # 3. Create a Pandas Dataframe
+    df_assets = pd.DataFrame(asset_data)
+    df_consumables = pd.DataFrame([c.to_dict() for c in consumables])
+
+    # 4. Save to an "In-Memory" Excel file (so we don't clutter your hard drive)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_assets.to_excel(writer, index=False, sheet_name='Assets')
+        df_consumables.to_excel(writer, index=False, sheet_name='Consumables')
+    
+    output.seek(0)
+
+    # 5. Send the file to the user
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name='Monthly_Inventory_Report.xlsx'
+    )
+
+# --- ROUTE TO SETUP DUMMY DATA (For Testing) ---
+@api.route('/setup-dummy-data')
+def setup_data():
+    # 1. Create Categories
+    electronics = Category(name="Electronics")
+    furniture = Category(name="Furniture")
+    
+    # 2. Create Locations
+    wh_a = Location(name="Warehouse A")
+    office = Location(name="Main Office")
+    
+    db.session.add_all([electronics, furniture, wh_a, office])
+    db.session.commit()
+
+    # 3. Create Assets (linked to Cat/Loc)
+    item1 = InventoryItem(name="Laptop", sku="LAP-001", quantity=3, price=1200.00, category=electronics, location=office)
+    item2 = InventoryItem(name="Desk Chair", sku="CHR-99", quantity=15, price=150.00, category=furniture, location=wh_a)
+    
+    # 4. Create Consumables
+    con1 = Consumable(name="Printer Ink", quantity=2, min_threshold=5) # This will trigger an alert!
+    
+    db.session.add_all([item1, item2, con1])
+    db.session.commit()
+    
+    return "Dummy data loaded! Visit /dashboard to see the alerts."
+
+# 6. Run the app
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+    app.run(debug=True)

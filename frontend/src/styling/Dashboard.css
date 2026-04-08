@@ -54,3 +54,19 @@
     font-size: 1.25rem;
   }
 }
+
+/* Appended to existing Dashboard.css */
+
+.role-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  margin-top: var(--spacing-xs);
+}
+.role-badge--admin    { background: var(--color-primary-light);  color: var(--color-primary);  border: 1px solid var(--color-primary-border); }
+.role-badge--manager  { background: var(--color-warning-light);  color: var(--color-warning);  border: 1px solid rgba(245,158,11,.3); }
+.role-badge--end-user { background: var(--color-success-light);  color: var(--color-success);  border: 1px solid rgba(16,185,129,.3); }

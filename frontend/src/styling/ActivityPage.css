@@ -145,3 +145,72 @@
     gap: var(--spacing-xs);
   }
 }
+
+/* Appended to existing ActivityPage.css */
+
+/* ── Audit readonly notice ───────────────────────────────────────── */
+.audit-notice {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--color-text-muted);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: 9px 14px; margin-bottom: 16px;
+}
+
+/* ── Date range picker ───────────────────────────────────────────── */
+.date-range {
+  display: flex; align-items: center; gap: 6px;
+}
+.date-sep { font-size: 12px; color: var(--color-text-muted); }
+.date-input {
+  height: 36px; padding: 0 10px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 12px; font-family: var(--font-mono);
+  transition: border-color var(--transition-fast);
+}
+.date-input:focus { outline: none; border-color: var(--color-primary); }
+.date-input::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
+
+/* ── Skeleton in log list ────────────────────────────────────────── */
+.log-item .skeleton {
+  background: linear-gradient(90deg, var(--color-bg-elevated) 25%, var(--color-bg-hover) 50%, var(--color-bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── Dropdown (shared) ───────────────────────────────────────────── */
+.dropdown-wrap { position: relative; }
+.dropdown-menu {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  min-width: 160px;
+  background: var(--color-bg-card); border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  z-index: 50; overflow: hidden; animation: fadeUp .15s ease;
+}
+.dropdown-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 9px 14px;
+  text-align: left; font-size: .875rem;
+  color: var(--color-text-secondary);
+  background: none; border: none; cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.dropdown-item:hover  { background: var(--color-bg-hover); color: var(--color-text-primary); }
+.dropdown-item.active { color: var(--color-primary); background: var(--color-primary-light); }
+
+/* ── Shared utilities ────────────────────────────────────────────── */
+.search-clear { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--color-text-muted); cursor: pointer; display: flex; align-items: center; padding: 0; }
+.results-count { font-size: .75rem; color: var(--color-text-muted); font-family: var(--font-mono); margin-left: auto; white-space: nowrap; }
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 64px 32px; color: var(--color-text-muted); text-align: center; }
+.empty-state p { font-size: .875rem; }
+
+.btn--ghost { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--color-border); border-radius: var(--radius-md); color: var(--color-text-muted); cursor: pointer; transition: all var(--transition-fast); padding: 6px 12px; font-size: .875rem; }
+.btn--ghost:hover { background: var(--color-bg-hover); color: var(--color-text-primary); border-color: var(--color-border-light); }
+.btn--sm { padding: 5px 10px; font-size: .8rem; }
+
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }

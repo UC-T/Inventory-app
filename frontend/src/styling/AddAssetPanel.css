@@ -1,0 +1,85 @@
+/* Container and Header */
+.asset-panel-content {
+    background-color: var(--background);
+    padding: 2rem;
+    border-left: 1px solid var(--border);
+}
+
+.asset-panel-header {
+    margin-bottom: 2rem;
+}
+
+/* Form Layout */
+.asset-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.form-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+/* Inputs matching UI Theme */
+.form-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--foreground);
+}
+
+.form-input {
+    background-color: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    transition: border-color 0.2s;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--ring);
+    box-shadow: 0 0 0 2px var(--ring-offset);
+}
+
+.form-input.error {
+    border-color: #ef4444; /* Destructive */
+}
+
+/* Action Buttons */
+.form-actions {
+    margin-top: 2rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.btn-submit {
+    background-color: #111827; /* Standard Admin Dark */
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-submit:hover {
+    opacity: 0.9;
+}
+
+.btn-submit:disabled {
+    background-color: #9ca3af;
+    cursor: not-allowed;
+}
