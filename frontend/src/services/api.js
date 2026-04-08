@@ -3,9 +3,9 @@ import axios from 'axios';
 // ─── Base instance ────────────────────────────────────────────────
 const api = axios.create({
   // Changed port from 3001 to 5000 to match your Flask backend
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
-  timeout: 10000,
-  headers: { 'Content-Type': 'application/json' },
+  baseURL: process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:5000/api',
+  // timeout: 10000,
+  // headers: { 'Content-Type': 'application/json' },
 });
 
 // ─── Request interceptor — inject JWT on every request ───────────
