@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, UserCheck, MapPin, Plus, Edit, Trash2, ChevronRight } from 'lucide-react';
+import { UserCheck, MapPin, Plus, Edit, Trash2, ChevronRight } from 'lucide-react';
 import '../styling/ActivityFeed.css';
 
 const activities = [

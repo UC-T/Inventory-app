@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Filter, AlertTriangle, Package, X, ArrowDown, ArrowUp } from 'lucide-react';
+import { Plus, Search, AlertTriangle, Package, X, ArrowDown, ArrowUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { consumablesAPI } from '../services/api';
 import '../styling/ConsumablesPage.css';

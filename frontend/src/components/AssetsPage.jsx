@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Search, Filter, QrCode, Edit, Trash2, Eye, X, Download, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { assetsAPI, categoriesAPI, locationsAPI } from '../services/api';
