@@ -11,7 +11,7 @@ def create_app():
     # ─── DATABASE CONFIGURATION ─────────────────────────────────
     # Supabase gives you a 'postgres://' URI, but SQLAlchemy 1.4+ 
     # requires 'postgresql://'. This fix ensures compatibility.
-    uri = os.environ.get('DATABASE_URL', 'sqlite:///../inventory.db')
+    uri = os.environ.get('DATABASE_URL', 'sqlite:///dev.db')  # Default to SQLite for local development
     if uri.startswith("postgres://"):
         uri = uri.replace("postgres://", "postgresql://", 1)
     
@@ -35,6 +35,9 @@ def create_app():
 
     # ─── BLUEPRINTS & TABLE CREATION ────────────────────────────
     with app.app_context():
+        # IMPORTANT: Import ALL models here so Alembic can see them
+        from . import models
+
         from .routes import api
         app.register_blueprint(api, url_prefix='/api')
         

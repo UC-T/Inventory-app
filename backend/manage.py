@@ -1,6 +1,10 @@
 import os
 import sys
 from flask_migrate import Migrate
+
+# This tells Python to look for the 'app' folder inside the 'backend' directory
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from app import create_app, db
 
 # ─── PROFESSIONAL ADDITION ──────────────────────────────────
