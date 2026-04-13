@@ -51,7 +51,7 @@ function SideBar({ collapsed, onToggle }) {
           <div className="logo-icon">
             <Radio size={22} />
           </div>
-          {!collapsed && (
+          {!collapsed && ( 
             <div className="logo-text">
               <span className="logo-title">AssetTrack</span>
               <span className="logo-subtitle">Inventory System</span>

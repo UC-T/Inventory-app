@@ -5,13 +5,13 @@ import { assetsAPI, categoriesAPI, locationsAPI } from '../services/api';
 import '../styling/AssetsPage.css';
 
 // ─── Static fallback data (used until backend is ready) ───────────
-const MOCK_ASSETS = [
-  { id: 1, asset_id: 'CAM-0042', name: 'PTZ Camera',          category: 'Cameras',   status: 'checked-out', location: 'Site #12',    assigned_to: 'John Davidson', serial: 'PTZ-2024-0042', ip_address: '192.168.1.42', mac_address: '00:1A:2B:3C:4D:5E', warranty_date: '2026-06-01' },
-  { id: 2, asset_id: 'CAM-0043', name: 'Dome Camera',          category: 'Cameras',   status: 'available',   location: 'Warehouse A',  assigned_to: null,            serial: 'DOM-2024-0043', ip_address: '—',            mac_address: '—',                 warranty_date: '2027-01-15' },
-  { id: 3, asset_id: 'DVR-0015', name: 'Network DVR 16CH',     category: 'Recording', status: 'available',   location: 'Warehouse A',  assigned_to: null,            serial: 'DVR-2024-0015', ip_address: '192.168.1.10', mac_address: 'AA:BB:CC:DD:EE:FF', warranty_date: '2025-11-01' },
-  { id: 4, asset_id: 'MON-0028', name: '27" Security Monitor', category: 'Displays',  status: 'maintenance', location: 'Service Center',assigned_to: null,            serial: 'MON-2024-0028', ip_address: '—',            mac_address: '—',                 warranty_date: '2025-06-30' },
-  { id: 5, asset_id: 'CAM-0044', name: 'Thermal Camera',       category: 'Cameras',   status: 'checked-out', location: 'Site #8',      assigned_to: 'Sarah Miller',  serial: 'THM-2024-0044', ip_address: '192.168.1.75', mac_address: '11:22:33:44:55:66', warranty_date: '2027-03-20' },
-];
+// const MOCK_ASSETS = [
+//   { id: 1, asset_id: 'CAM-0042', name: 'PTZ Camera',          category: 'Cameras',   status: 'checked-out', location: 'Site #12',    assigned_to: 'John Davidson', serial: 'PTZ-2024-0042', ip_address: '192.168.1.42', mac_address: '00:1A:2B:3C:4D:5E', warranty_date: '2026-06-01' },
+//   { id: 2, asset_id: 'CAM-0043', name: 'Dome Camera',          category: 'Cameras',   status: 'available',   location: 'Warehouse A',  assigned_to: null,            serial: 'DOM-2024-0043', ip_address: '—',            mac_address: '—',                 warranty_date: '2027-01-15' },
+//   { id: 3, asset_id: 'DVR-0015', name: 'Network DVR 16CH',     category: 'Recording', status: 'available',   location: 'Warehouse A',  assigned_to: null,            serial: 'DVR-2024-0015', ip_address: '192.168.1.10', mac_address: 'AA:BB:CC:DD:EE:FF', warranty_date: '2025-11-01' },
+//   { id: 4, asset_id: 'MON-0028', name: '27" Security Monitor', category: 'Displays',  status: 'maintenance', location: 'Service Center',assigned_to: null,            serial: 'MON-2024-0028', ip_address: '—',            mac_address: '—',                 warranty_date: '2025-06-30' },
+//   { id: 5, asset_id: 'CAM-0044', name: 'Thermal Camera',       category: 'Cameras',   status: 'checked-out', location: 'Site #8',      assigned_to: 'Sarah Miller',  serial: 'THM-2024-0044', ip_address: '192.168.1.75', mac_address: '11:22:33:44:55:66', warranty_date: '2027-03-20' },
+// ];
 
 const STATUS_CONFIG = {
   'available':   { label: 'Available',   className: 'status--available' },
@@ -37,9 +37,10 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
   function validate() {
     const e = {};
     if (!form.name.trim())   e.name   = 'Name is required';
-    if (!form.serial.trim()) e.serial = 'Serial number is required';
+    // if (!form.serial.trim()) e.serial = 'Serial number is required';
     if (!form.category)      e.category = 'Category is required';
     if (!form.location)      e.location = 'Location is required';
+    if (!form.warranty_date)   e.warranty_date = 'Warranty date is required';
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -55,7 +56,7 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
       onSave(result);
     } catch {
       console.log('some error occurred');// mock save
-      onSave({ ...form, id: Date.now() });
+      // onSave({ ...form, id: Date.now() });
     } finally {
       setSaving(false);
     }
@@ -112,9 +113,9 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
             <select className={`form-select ${errors.category ? 'form-input--error' : ''}`}
               value={form.category} onChange={e => set('category', e.target.value)}>
               <option value="">Select category…</option>
-              {(categories.length ? categories : ['Cameras','Recording','Displays','Network','Tools']).map(c => (
+              {/* {(categories.length ? categories : ['Cameras','Recording','Displays','Network','Tools']).map(c => (
                 <option key={c} value={typeof c === 'string' ? c : c.name}>{typeof c === 'string' ? c : c.name}</option>
-              ))}
+              ))} */}
             </select>
             {errors.category && <span className="form-error">{errors.category}</span>}
           </div>
@@ -243,16 +244,16 @@ function ViewModal({ asset, onClose }) {
 function AssetsPage() {
   const { can } = useAuth();
 
-  const [assets,     setAssets]     = useState(MOCK_ASSETS);
+  const [assets,     setAssets]     = useState([]);
   const [categories, setCategories] = useState([]);
   const [locations,  setLocations]  = useState([]);
   const [loading,    setLoading]    = useState(false);
 
   // UI state
-  const [search,     setSearch]     = useState('');
+  const [search,       setSearch]       = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterCat,  setFilterCat]  = useState('all');
-  const [showFilter, setShowFilter] = useState(false);
+  const [filterCat,    setFilterCat]    = useState('all');
+  const [showFilter,   setShowFilter]   = useState(false);
 
   // Modal state
   const [addModal,    setAddModal]    = useState(false);
@@ -273,8 +274,8 @@ function AssetsPage() {
         setAssets(a);
         setCategories(c);
         setLocations(l);
-      } catch {
-        // keep mock data
+      } catch (err){
+        console.error("Failed to fetch data:", err);
       } finally {
         setLoading(false);
       }
@@ -283,19 +284,19 @@ function AssetsPage() {
   }, []);
 
   // Filter logic
-  const filtered = assets.filter(a => {
-    const q = search.toLowerCase();
-    const matchSearch = !q ||
-      a.name?.toLowerCase().includes(q) ||
-      a.serial?.toLowerCase().includes(q) ||
-      a.asset_id?.toLowerCase().includes(q) ||
-      a.assigned_to?.toLowerCase().includes(q);
-    const matchStatus = filterStatus === 'all' || a.status === filterStatus;
-    const matchCat    = filterCat    === 'all' || a.category === filterCat;
-    return matchSearch && matchStatus && matchCat;
-  });
+  // const filtered = assets.filter(a => {
+  //   const q = search.toLowerCase();
+  //   const matchSearch = !q ||
+  //     a.name?.toLowerCase().includes(q) ||
+  //     a.serial?.toLowerCase().includes(q) ||
+  //     a.asset_id?.toLowerCase().includes(q) ||
+  //     a.assigned_to?.toLowerCase().includes(q);
+  //   const matchStatus = filterStatus === 'all' || a.status === filterStatus;
+  //   const matchCat    = filterCat    === 'all' || a.category === filterCat;
+  //   return matchSearch && matchStatus && matchCat;
+  // });
 
-  const allCategories = [...new Set(assets.map(a => a.category).filter(Boolean))];
+  // const allCategories = [...new Set(assets.map(a => a.category).filter(Boolean))];
 
   // Handlers
   function handleSaved(saved) {
@@ -331,11 +332,18 @@ function AssetsPage() {
     }
   }
 
-  function isWarrantyNear(date) {
-    if (!date) return false;
-    const diff = (new Date(date) - new Date()) / 86400000;
-    return diff >= 0 && diff <= 30;
-  }
+  // function isWarrantyNear(date) {
+  //   if (!date) return false;
+  //   const diff = (new Date(date) - new Date()) / 86400000;
+  //   return diff >= 0 && diff <= 30;
+  // }
+
+  // 3. Scalable Filter (We map 'assets' directly now)
+  // Later, we will move 'search' to a backend query for 1000+ items
+  const displayAssets = assets.filter(a => 
+    a.name?.toLowerCase().includes(search.toLowerCase()) ||
+    a.asset_id?.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="assets-page">
@@ -372,7 +380,6 @@ function AssetsPage() {
         </div>
 
         <div className="filter-group">
-          {/* Status filter pills */}
           {['all', 'available', 'checked-out', 'maintenance'].map(s => (
             <button key={s}
               className={`filter-pill ${filterStatus === s ? 'filter-pill--active' : ''}`}
@@ -382,10 +389,8 @@ function AssetsPage() {
           ))}
         </div>
 
-        {/* Category dropdown filter */}
         <div className="dropdown-wrap">
-          <button className="btn btn--secondary"
-            onClick={() => setShowFilter(p => !p)}>
+          <button className="btn btn--secondary" onClick={() => setShowFilter(p => !p)}>
             <Filter size={16} />
             {filterCat === 'all' ? 'Category' : filterCat}
             <ChevronDown size={14} />
@@ -396,21 +401,21 @@ function AssetsPage() {
                 onClick={() => { setFilterCat('all'); setShowFilter(false); }}>
                 All categories
               </button>
-              {allCategories.map(c => (
-                <button key={c}
-                  className={`dropdown-item ${filterCat === c ? 'active' : ''}`}
-                  onClick={() => { setFilterCat(c); setShowFilter(false); }}>
-                  {c}
+              {/* Live Data mapping inside the original UI structure */}
+              {categories.map(c => (
+                <button key={c.id}
+                  className={`dropdown-item ${filterCat === c.name ? 'active' : ''}`}
+                  onClick={() => { setFilterCat(c.name); setShowFilter(false); }}>
+                  {c.name}
                 </button>
               ))}
             </div>
           )}
         </div>
 
-        <span className="results-count">{filtered.length} of {assets.length}</span>
+        <span className="results-count">{displayAssets.length} of {assets.length}</span>
       </div>
 
-      {/* ── Table ────────────────────────────────────────────────── */}
       <div className="data-table-container">
         {loading ? (
           <div className="table-loading">
@@ -418,10 +423,10 @@ function AssetsPage() {
               <div key={i} className="skeleton skeleton-row" />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : displayAssets.length === 0 ? (
           <div className="empty-state">
             <Search size={32} style={{ opacity: 0.2 }} />
-            <p>No assets match your search</p>
+            <p>{search ? "No assets match your search" : "No real assets found in Supabase. Add your first one!"}</p>
             {search && <button className="btn btn--secondary" onClick={() => setSearch('')}>Clear search</button>}
           </div>
         ) : (
@@ -440,7 +445,7 @@ function AssetsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(asset => (
+              {displayAssets.map(asset => (
                 <tr key={asset.id}>
                   <td><span className="font-mono asset-id">{asset.asset_id}</span></td>
                   <td><span className="asset-name">{asset.name}</span></td>
@@ -454,37 +459,32 @@ function AssetsPage() {
                   <td style={{ color: 'var(--color-text-secondary)' }}>{asset.location}</td>
                   <td style={{ color: 'var(--color-text-secondary)' }}>{asset.assigned_to || '—'}</td>
                   <td>
-                    <span className={isWarrantyNear(asset.warranty_date) ? 'warranty-near' : 'warranty-ok'}>
+                    <span className="warranty-ok">
                       {asset.warranty_date || '—'}
                     </span>
                   </td>
                   <td>
                     <div className="action-buttons">
-                      <button className="icon-btn" title="View details"
-                        onClick={() => setViewAsset(asset)}>
+                      <button className="icon-btn" title="View details" onClick={() => setViewAsset(asset)}>
                         <Eye size={15} />
                       </button>
                       {can('asset_qr') && (
-                        <button className="icon-btn" title="Download QR code"
-                          onClick={() => handleQR(asset)}>
+                        <button className="icon-btn" title="Download QR code" onClick={() => handleQR(asset)}>
                           <QrCode size={15} />
                         </button>
                       )}
                       {can('asset_gatepass') && (
-                        <button className="icon-btn" title="Download Gate Pass"
-                          onClick={() => handleGatePass(asset)}>
+                        <button className="icon-btn" title="Download Gate Pass" onClick={() => handleGatePass(asset)}>
                           <Download size={15} />
                         </button>
                       )}
                       {can('asset_edit') && (
-                        <button className="icon-btn" title="Edit"
-                          onClick={() => setEditAsset(asset)}>
+                        <button className="icon-btn" title="Edit" onClick={() => setEditAsset(asset)}>
                           <Edit size={15} />
                         </button>
                       )}
                       {can('asset_delete') && (
-                        <button className="icon-btn icon-btn--danger" title="Delete"
-                          onClick={() => setDeleteAsset(asset)}>
+                        <button className="icon-btn icon-btn--danger" title="Delete" onClick={() => setDeleteAsset(asset)}>
                           <Trash2 size={15} />
                         </button>
                       )}
@@ -501,7 +501,7 @@ function AssetsPage() {
       {addModal && (
         <AssetModal
           onClose={() => setAddModal(false)}
-          onSave={handleSaved}
+          // onSave={handleSaved}
           categories={categories}
           locations={locations}
         />

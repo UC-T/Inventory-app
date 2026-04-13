@@ -8,16 +8,16 @@ const ICON_MAP = { Camera, HardDrive, Monitor, Cable, Cpu, Wrench, Box, Shield, 
 const COLOR_OPTIONS = ['primary','info','success','warning'];
 const ICON_OPTIONS  = Object.keys(ICON_MAP);
 
-const MOCK_CATEGORIES = [
-  { id: 1, name: 'Cameras',        icon: 'Camera',    assetCount: 156, consumableCount: 0,   color: 'primary' },
-  { id: 2, name: 'Recording',      icon: 'HardDrive', assetCount: 48,  consumableCount: 24,  color: 'info'    },
-  { id: 3, name: 'Displays',       icon: 'Monitor',   assetCount: 32,  consumableCount: 0,   color: 'success' },
-  { id: 4, name: 'Cables',         icon: 'Cable',     assetCount: 0,   consumableCount: 890, color: 'warning' },
-  { id: 5, name: 'Network',        icon: 'Cpu',       assetCount: 67,  consumableCount: 156, color: 'primary' },
-  { id: 6, name: 'Tools',          icon: 'Wrench',    assetCount: 45,  consumableCount: 234, color: 'info'    },
-  { id: 7, name: 'Enclosures',     icon: 'Box',       assetCount: 0,   consumableCount: 312, color: 'success' },
-  { id: 8, name: 'Access Control', icon: 'Shield',    assetCount: 89,  consumableCount: 67,  color: 'warning' },
-];
+// const MOCK_CATEGORIES = [
+//   { id: 1, name: 'Cameras',        icon: 'Camera',    assetCount: 156, consumableCount: 0,   color: 'primary' },
+//   { id: 2, name: 'Recording',      icon: 'HardDrive', assetCount: 48,  consumableCount: 24,  color: 'info'    },
+//   { id: 3, name: 'Displays',       icon: 'Monitor',   assetCount: 32,  consumableCount: 0,   color: 'success' },
+//   { id: 4, name: 'Cables',         icon: 'Cable',     assetCount: 0,   consumableCount: 890, color: 'warning' },
+//   { id: 5, name: 'Network',        icon: 'Cpu',       assetCount: 67,  consumableCount: 156, color: 'primary' },
+//   { id: 6, name: 'Tools',          icon: 'Wrench',    assetCount: 45,  consumableCount: 234, color: 'info'    },
+//   { id: 7, name: 'Enclosures',     icon: 'Box',       assetCount: 0,   consumableCount: 312, color: 'success' },
+//   { id: 8, name: 'Access Control', icon: 'Shield',    assetCount: 89,  consumableCount: 67,  color: 'warning' },
+// ];
 
 const EMPTY_FORM = { name: '', icon: 'Tag', color: 'primary' };
 
@@ -154,29 +154,41 @@ function DeleteConfirm({ category, onClose, onConfirm }) {
 // ─── Main ─────────────────────────────────────────────────────────
 function CategoriesPage() {
   const { can } = useAuth();
-  const [categories, setCategories] = useState(MOCK_CATEGORIES);
+  const [categories, setCategories] = useState([]);
   const [search,     setSearch]     = useState('');
   const [addModal,   setAddModal]   = useState(false);
   const [editItem,   setEditItem]   = useState(null);
   const [deleteItem, setDeleteItem] = useState(null);
 
   useEffect(() => {
-    categoriesAPI.getAll().then(setCategories).catch(() => {});
+    async function load() {
+      try {
+        const data = await categoriesAPI.getAll(); // Ensure this sends the Bearer token
+        setCategories(data);
+      } catch (err) {
+        console.error("Failed to load categories:", err);
+      }
+    }
+    load();
   }, []);
 
   const filtered = categories.filter(c =>
     !search || c.name.toLowerCase().includes(search.toLowerCase())
   );
 
+  // Within handleSaved
   function handleSaved(saved) {
     setCategories(prev => {
       const exists = prev.find(c => c.id === saved.id);
-      return exists ? prev.map(c => c.id === saved.id ? saved : c) : [saved, ...prev];
+      return exists 
+        ? prev.map(c => c.id === saved.id ? saved : c) 
+        : [saved, ...prev];
     });
     setAddModal(false);
     setEditItem(null);
   }
 
+  // Within handleDeleted
   function handleDeleted(id) {
     setCategories(prev => prev.filter(c => c.id !== id));
     setDeleteItem(null);
@@ -210,8 +222,10 @@ function CategoriesPage() {
 
       <div className="categories-grid">
         {filtered.map(category => {
-          const Icon  = ICON_MAP[category.icon] || Tag;
+          const Icon = ICON_MAP[category.icon] || Tag;
+          // Data now comes from the Backend to_dict()
           const total = (category.assetCount || 0) + (category.consumableCount || 0);
+          
           return (
             <div key={category.id} className="category-card">
               {can('category_manage') && (

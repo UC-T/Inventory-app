@@ -240,15 +240,21 @@ function LocationsPage() {
       ) : (
         <div className="locations-grid">
           {filtered.map(location => {
-            const config  = TYPE_CONFIG[location.type];
+            // TYPE_CONFIG must exist in your file to map icons/colors based on location.type
+            // Defaulting to a 'warehouse' or 'site' if the backend type is missing
+            const config = TYPE_CONFIG[location.type] || TYPE_CONFIG['warehouse'];
             const TypeIcon = config.icon;
+
             return (
               <div key={location.id} className="location-card">
                 <div className="location-header">
                   <div className={`location-type-icon ${config.className}`}>
                     <TypeIcon size={20} />
                   </div>
-                  <span className={`location-type-badge ${config.className}`}>{config.label}</span>
+                  <span className={`location-type-badge ${config.className}`}>
+                    {config.label}
+                  </span>
+                  
                   {can('location_manage') && (
                     <div className="location-actions">
                       <button className="icon-btn" title="Edit" onClick={() => setEditItem(location)}>
@@ -263,18 +269,19 @@ function LocationsPage() {
 
                 <h3 className="location-name">{location.name}</h3>
                 <p className="location-address">
-                  <MapPin size={13} />{location.address}
+                  <MapPin size={13} />
+                  {location.address || 'No address provided'}
                 </p>
 
                 <div className="location-stats">
                   <div className="location-stat">
                     <Package size={15} />
-                    <span className="stat-value">{location.assetCount}</span>
+                    <span className="stat-value">{location.assetCount || 0}</span>
                     <span className="stat-label">Assets</span>
                   </div>
                   <div className="location-stat">
                     <Boxes size={15} />
-                    <span className="stat-value">{location.consumableCount}</span>
+                    <span className="stat-value">{location.consumableCount || 0}</span>
                     <span className="stat-label">Consumables</span>
                   </div>
                 </div>
@@ -283,7 +290,6 @@ function LocationsPage() {
           })}
         </div>
       )}
-
       {addModal    && <LocationModal onClose={() => setAddModal(false)} onSave={handleSaved} />}
       {editItem    && <LocationModal location={editItem} onClose={() => setEditItem(null)} onSave={handleSaved} />}
       {deleteItem  && <DeleteConfirm location={deleteItem} onClose={() => setDeleteItem(null)} onConfirm={handleDeleted} />}

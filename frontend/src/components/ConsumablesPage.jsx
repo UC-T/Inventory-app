@@ -4,14 +4,14 @@ import { useAuth } from '../context/AuthContext';
 import { consumablesAPI } from '../services/api';
 import '../styling/ConsumablesPage.css';
 
-const MOCK_CONSUMABLES = [
-  { id: 1, name: 'RG-6 Coax Cable (1000ft)', sku: 'CBL-RG6-1K',   quantity: 2,  minStock: 5,  category: 'Cables',      location: 'Warehouse A' },
-  { id: 2, name: 'BNC Connectors (100pk)',   sku: 'CON-BNC-100',  quantity: 45, minStock: 20, category: 'Connectors',  location: 'Warehouse A' },
-  { id: 3, name: 'Cat6 Cable (500ft)',        sku: 'CBL-CAT6-500', quantity: 8,  minStock: 10, category: 'Cables',      location: 'Warehouse B' },
-  { id: 4, name: 'Power Supply 12V 2A',       sku: 'PWR-12V-2A',   quantity: 32, minStock: 15, category: 'Power',       location: 'Warehouse A' },
-  { id: 5, name: 'Mounting Brackets',         sku: 'MNT-BRK-UNI', quantity: 78, minStock: 25, category: 'Hardware',    location: 'Warehouse A' },
-  { id: 6, name: 'Weatherproof Junction Box', sku: 'BOX-WP-SM',   quantity: 12, minStock: 20, category: 'Enclosures',  location: 'Warehouse B' },
-];
+// const MOCK_CONSUMABLES = [
+//   { id: 1, name: 'RG-6 Coax Cable (1000ft)', sku: 'CBL-RG6-1K',   quantity: 2,  minStock: 5,  category: 'Cables',      location: 'Warehouse A' },
+//   { id: 2, name: 'BNC Connectors (100pk)',   sku: 'CON-BNC-100',  quantity: 45, minStock: 20, category: 'Connectors',  location: 'Warehouse A' },
+//   { id: 3, name: 'Cat6 Cable (500ft)',        sku: 'CBL-CAT6-500', quantity: 8,  minStock: 10, category: 'Cables',      location: 'Warehouse B' },
+//   { id: 4, name: 'Power Supply 12V 2A',       sku: 'PWR-12V-2A',   quantity: 32, minStock: 15, category: 'Power',       location: 'Warehouse A' },
+//   { id: 5, name: 'Mounting Brackets',         sku: 'MNT-BRK-UNI', quantity: 78, minStock: 25, category: 'Hardware',    location: 'Warehouse A' },
+//   { id: 6, name: 'Weatherproof Junction Box', sku: 'BOX-WP-SM',   quantity: 12, minStock: 20, category: 'Enclosures',  location: 'Warehouse B' },
+// ];
 
 function getStockStatus(quantity, minStock) {
   if (quantity <= 0)         return { label: 'Out of Stock', cls: 'stock--out' };
@@ -242,7 +242,7 @@ function ConsumableModal({ item, onClose, onSave }) {
 function ConsumablesPage() {
   const { can } = useAuth();
 
-  const [items,   setItems]   = useState(MOCK_CONSUMABLES);
+  const [items,   setItems]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [search,  setSearch]  = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -351,9 +351,14 @@ function ConsumablesPage() {
       ) : (
         <div className="consumables-grid">
           {filtered.map(item => {
-            const { label, cls } = getStockStatus(item.quantity, item.minStock);
-            const pct = getStockPct(item.quantity, item.minStock);
-            const isLow = item.quantity < item.minStock;
+            // 1. USE BACKEND LOGIC: We replace 'getStockStatus' and 'getStockPct' 
+            // with the real data from your Python to_dict()
+            const isLow = item.is_low_stock; 
+            const label = isLow ? (item.quantity <= 0 ? 'Out of Stock' : 'Low Stock') : 'In Stock';
+            const cls = isLow ? (item.quantity <= 0 ? 'stock--out' : 'stock--low') : 'stock--ok';
+            
+            // Keep the visual percentage for the UI bar
+            const pct = Math.min(100, Math.round((item.quantity / (item.minStock * 2)) * 100));
 
             return (
               <div key={item.id} className={`consumable-card ${isLow ? 'consumable-card--warning' : ''}`}>
@@ -374,11 +379,13 @@ function ConsumablesPage() {
                   <span className="quantity-label">units</span>
                 </div>
 
+                {/* UI PROGRESS BAR: Restored exactly as v0 intended */}
                 <div className="stock-bar-container">
                   <div className={`stock-bar ${cls}`} style={{ width: `${pct}%` }} />
                 </div>
 
                 <div className="consumable-footer">
+                  {/* UPDATED STATUS: Driven by backend 'is_low_stock' */}
                   <span className={`stock-status ${cls}`}>{label}</span>
                   <span className="min-stock">Min: {item.minStock}</span>
                 </div>
