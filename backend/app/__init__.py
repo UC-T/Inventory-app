@@ -12,20 +12,24 @@ def create_app():
     # Supabase gives you a 'postgres://' URI, but SQLAlchemy 1.4+ 
     # requires 'postgresql://'. This fix ensures compatibility.
     # Force SQLite if we are running in DEBUG mode locally
-    if app.debug:
-        uri = 'sqlite:///dev.db'
-    else:
-        uri = os.environ.get('DATABASE_URL', 'sqlite:///dev.db')
 
-    # ─── LOGGING THE SOURCE ─────────────────────────────────────
-    if "sqlite" in uri:
+    # Priority 1: Check for the environment variable (Supabase)
+    # Priority 2: Only use SQLite as a fallback if the Cloud URL is missing
+    uri = os.environ.get('DATABASE_URL')
+
+    if not uri:
+        # Final fallback if no environment variable is found
+        uri = 'sqlite:///dev.db'
         print("--- 🏠 DATABASE: LOCAL (SQLite) accessed ---")
     else:
+        # Cloud logging
         db_host = uri.split('@')[-1].split('/')[0] if '@' in uri else "Supabase"
         print(f"--- ☁️ DATABASE: CLOUD ({db_host}) accessed ---")
 
-    # Final protocol fix for SQLAlchemy compatibility
-    if uri.startswith("postgres://"):
+    # ─── LOGGING THE SOURCE ─────────────────────────────────────
+   # ─── PROTOCOL FIX ──────────────────────────────────────────
+    # SQLAlchemy 1.4+ requires 'postgresql://' instead of 'postgres://'
+    if uri and uri.startswith("postgres://"):
         uri = uri.replace("postgres://", "postgresql://", 1)
     
     app.config['SQLALCHEMY_DATABASE_URI'] = uri
@@ -56,6 +60,6 @@ def create_app():
         
         # This will automatically create your tables in Supabase 
         # the very first time the app runs on Vercel.
-        db.create_all()
+        # db.create_all()
 
     return app
