@@ -341,24 +341,35 @@ def handle_consumables():
     if request.method == 'POST':
         data = request.get_json()
 
-        # 1. Validation: Check for required fields
-        if not data or 'name' not in data or 'quantity' not in data:
-            return jsonify({"error": "Missing required fields", "required": ["name", "quantity"]}), 400
+        # 1. Validation: Added 'sku' as a required field based on the new model
+        required_fields = ['name', 'sku', 'quantity']
+        if not data or not all(k in data for k in required_fields):
+            return jsonify({
+                "error": "Missing required fields", 
+                "required": required_fields
+            }), 400
 
-        # 2. Validation: Ensure quantity is a non-negative number
+        # 2. Validation: Ensure quantity and minStock (threshold) are valid
         try:
             qty = int(data['quantity'])
-            if qty < 0:
+            # We use 'minStock' from frontend or 'min_threshold' from direct API calls
+            threshold = int(data.get('minStock', data.get('min_threshold', 5)))
+            if qty < 0 or threshold < 0:
                 raise ValueError
         except (ValueError, TypeError):
-            return jsonify({"error": "Quantity must be a positive integer"}), 400
+            return jsonify({"error": "Quantity and threshold must be positive integers"}), 400
 
         try:
             new_con = Consumable(
-                name=data['name'].strip(), 
-                quantity=qty, 
-                min_threshold=data.get('min_threshold', 5)
+                name=data['name'].strip(),
+                sku=data['sku'].strip().upper(), # Standardize SKU to uppercase
+                quantity=qty,
+                min_threshold=threshold,
+                # Optional Relationships
+                category_id=data.get('category_id'), 
+                location_id=data.get('location_id')
             )
+            
             db.session.add(new_con)
             db.session.commit()
             
@@ -369,28 +380,81 @@ def handle_consumables():
 
         except IntegrityError:
             db.session.rollback()
-            return jsonify({"error": "A consumable with this name already exists"}), 409
+            # This triggers if the SKU is a duplicate
+            return jsonify({"error": "A consumable with this SKU already exists"}), 409
         except Exception as e:
             db.session.rollback()
             return jsonify({"error": "Database error", "details": str(e)}), 500
 
-# --- DELETE CONSUMABLE ---
+# ─── DELETE ENTIRE ITEM (ADMIN ONLY) ──────────────────────────────
 @api.route('/consumables/<int:con_id>', methods=['DELETE'])
 @jwt_required()
 @admin_required
 def delete_consumable_by_id(con_id):
+    # .get_or_404 already handles the "if not consumable" check automatically
     consumable = Consumable.query.get_or_404(con_id)
-    # ─── THE ERROR CHECK ──────────────────────────────────────────
-    if not consumable:
-        return jsonify({
-            "error": "Consumable not found",
-            "message": f"No consumable exists with ID: {con_id}",
-            "status": 404
-        }), 404
-    # ──────────────────────────────────────────────────────────────
+    
+    name_cache = consumable.name
     db.session.delete(consumable)
     db.session.commit()
-    return jsonify({"message": f"Consumable '{consumable.name}' removed"}), 200
+    
+    return jsonify({
+        "message": f"Consumable '{name_cache}' completely removed from database"
+    }), 200
+
+@api.route('/consumables/bulk-delete', methods=['POST'])
+@jwt_required()
+@admin_required
+def bulk_delete_consumables():
+    data = request.get_json()
+    ids = data.get('ids', []) # Expected format: {"ids": [1, 2, 5]}
+    
+    if not ids:
+        return jsonify({"error": "No IDs provided"}), 400
+        
+    deleted_count = Consumable.query.filter(Consumable.id.in_(ids)).delete(synchronize_session=False)
+    db.session.commit()
+    
+    return jsonify({"message": f"Successfully deleted {deleted_count} items"}), 200
+
+# ─── DELETE BY QUANTITY (ISSUE / REDUCE STOCK) ───────────────────
+@api.route('/consumables/<int:con_id>/reduce', methods=['POST'])
+@jwt_required()
+def reduce_consumable_quantity(con_id):
+    consumable = Consumable.query.get_or_404(con_id)
+    data = request.get_json()
+
+    # 1. Validation
+    if not data or 'quantity' not in data:
+        return jsonify({"error": "Quantity to remove is required"}), 400
+
+    try:
+        reduce_qty = int(data['quantity'])
+        if reduce_qty <= 0:
+            return jsonify({"error": "Quantity must be greater than zero"}), 400
+            
+        # 2. Check for sufficient stock
+        if reduce_qty > consumable.quantity:
+            return jsonify({
+                "error": "Insufficient stock",
+                "current_stock": consumable.quantity
+            }), 400
+
+        # 3. Perform the reduction
+        consumable.quantity -= reduce_qty
+        db.session.commit()
+
+        return jsonify({
+            "message": f"Successfully removed {reduce_qty} units from {consumable.name}",
+            "new_quantity": consumable.quantity,
+            "is_low_stock": consumable.quantity <= consumable.min_threshold
+        }), 200
+
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid quantity format"}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Update failed", "details": str(e)}), 500
 
 @api.route('/report/monthly', methods=['GET'])
 @jwt_required()
@@ -432,30 +496,6 @@ def download_monthly_report():
     )
 
 # --- ROUTE TO SETUP DUMMY DATA (For Testing) ---
-# @api.route('/setup-dummy-data')
-# def setup_data():
-#     # 1. Create Categories
-#     electronics = Category(name="Electronics")
-#     furniture = Category(name="Furniture")
-    
-#     # 2. Create Locations
-#     wh_a = Location(name="Warehouse A")
-#     office = Location(name="Main Office")
-    
-#     db.session.add_all([electronics, furniture, wh_a, office])
-#     db.session.commit()
-
-#     # 3. Create Assets (linked to Cat/Loc)
-#     item1 = AssetItem(name="Laptop", sku="LAP-001", quantity=3, price=1200.00, category=electronics, location=office)
-#     item2 = AssetItem(name="Desk Chair", sku="CHR-99", quantity=15, price=150.00, category=furniture, location=wh_a)
-    
-#     # 4. Create Consumables
-#     con1 = Consumable(name="Printer Ink", quantity=2, min_threshold=5) # This will trigger an alert!
-    
-#     db.session.add_all([item1, item2, con1])
-#     db.session.commit()
-    
-#     return "Dummy data loaded! Visit /dashboard to see the alerts."
 
 # 6. Run the app
 if __name__ == '__main__':
