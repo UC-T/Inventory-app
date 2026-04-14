@@ -102,12 +102,12 @@ class Consumable(db.Model):
             "sku": self.sku,
             "quantity": self.quantity,
             "minStock": self.min_threshold, # Maps DB 'min_threshold' to UI 'minStock'
-            "min_threshold": self.min_threshold,
+            # "min_threshold": self.min_threshold, # Keep this for internal use and future-proofing
             
             # Production feature: Flag low stock directly from the backend
             "is_low_stock": self.quantity <= self.min_threshold,
             "category": self.category.name if self.category else "General",
-            "location": self.location.name if self.location else "Main Store"
+            "location": self.location.name if self.location else "Main Store",
             "last_updated": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None
         }
 
