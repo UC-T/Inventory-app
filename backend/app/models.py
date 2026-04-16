@@ -113,10 +113,13 @@ class Consumable(db.Model):
 
 class User(db.Model):
     __tablename__ = 'users'  # THIS IS THE MISSING LINK
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
-    role = db.Column(db.String(20), default='staff', nullable=False) # 'admin' or 'staff'
+   id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    # CHECK THIS LINE: It must be 'email', not 'username'
+    email = db.Column(db.String(120), unique=True, nullable=False) 
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), default='end-user')
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
     def set_password(self, password):
         # Use the renamed instance here

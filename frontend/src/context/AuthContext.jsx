@@ -1,44 +1,35 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 // ─── Role definitions ─────────────────────────────────────────────
-// admin      → full control: CRUD, audit logs, user management
-// manager    → view all, approve requests, issue/return assets
-// end-user   → view only their own assigned items, submit requests
 export const ROLES = {
   ADMIN:    'admin',
   MANAGER:  'manager',
   END_USER: 'end-user',
 };
 
-// Permission map — what each role can do
+// Permission map — remains exactly as you defined
 export const PERMISSIONS = {
-  // Assets
-  asset_view:    [ROLES.ADMIN, ROLES.MANAGER, ROLES.END_USER],
-  asset_create:  [ROLES.ADMIN, ROLES.MANAGER],
-  asset_edit:    [ROLES.ADMIN, ROLES.MANAGER],
-  asset_delete:  [ROLES.ADMIN],
-  asset_qr:      [ROLES.ADMIN, ROLES.MANAGER],
-  asset_gatepass:[ROLES.ADMIN, ROLES.MANAGER],
+  asset_view:      [ROLES.ADMIN, ROLES.MANAGER, ROLES.END_USER],
+  asset_create:    [ROLES.ADMIN, ROLES.MANAGER],
+  asset_edit:      [ROLES.ADMIN, ROLES.MANAGER],
+  asset_delete:    [ROLES.ADMIN],
+  asset_qr:        [ROLES.ADMIN, ROLES.MANAGER],
+  asset_gatepass:  [ROLES.ADMIN, ROLES.MANAGER],
 
-  // Consumables
   consumable_view:     [ROLES.ADMIN, ROLES.MANAGER, ROLES.END_USER],
   consumable_create:   [ROLES.ADMIN, ROLES.MANAGER],
   consumable_stockin:  [ROLES.ADMIN, ROLES.MANAGER],
   consumable_issue:    [ROLES.ADMIN, ROLES.MANAGER],
   consumable_delete:   [ROLES.ADMIN],
 
-  // Audit log
   log_view:     [ROLES.ADMIN, ROLES.MANAGER],
   log_export:   [ROLES.ADMIN],
 
-  // Users
   user_manage:  [ROLES.ADMIN],
 
-  // Locations & Categories
   location_manage:  [ROLES.ADMIN, ROLES.MANAGER],
   category_manage:  [ROLES.ADMIN],
 
-  // Settings
   settings_view:    [ROLES.ADMIN, ROLES.MANAGER],
   settings_edit:    [ROLES.ADMIN],
 };
@@ -50,43 +41,62 @@ export function AuthProvider({ children }) {
   const [token, setToken]   = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Rehydrate from localStorage on mount
+  // ─── Rehydrate & Validate Session ───────────────────────────────
   useEffect(() => {
-    try {
-      const savedToken = localStorage.getItem('token');
-      const savedUser  = localStorage.getItem('user');
-      if (savedToken && savedUser) {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
+    function rehydrate() {
+      try {
+        const savedToken = localStorage.getItem('token');
+        const savedUser  = localStorage.getItem('user');
+
+        // Check if token looks like a real JWT (has segments) 
+        // to prevent the "Not enough segments" 422 error on boot.
+        if (savedToken && savedToken.includes('.') && savedUser) {
+          setToken(savedToken);
+          setUser(JSON.parse(savedUser));
+        } else if (savedToken) {
+          // If token exists but is malformed (mock-token), clear it
+          console.warn("Malformed token detected, clearing session.");
+          logout();
+        }
+      } catch (err) {
+        console.error("Auth Rehydration Error:", err);
+        logout();
+      } finally {
+        setLoading(false);
       }
-    } catch {
-      localStorage.clear();
-    } finally {
-      setLoading(false);
     }
+    rehydrate();
   }, []);
 
-  // Login — called by Login page after successful API response
+  // ─── Authentic Login ─────────────────────────────────────────────
+  // This is called by your LoginPage.jsx after a successful 
+  // response from your Python /api/login route.
   function login(userData, jwtToken) {
+    if (!jwtToken || !jwtToken.includes('.')) {
+      console.error("Attempted to login with invalid JWT format.");
+      return;
+    }
+    
     setUser(userData);
     setToken(jwtToken);
     localStorage.setItem('token', jwtToken);
     localStorage.setItem('user', JSON.stringify(userData));
   }
 
-  // Logout — clears all state
+  // ─── Clear All State ─────────────────────────────────────────────
   function logout() {
     setUser(null);
     setToken(null);
-    localStorage.clear();
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    // We don't use .clear() to avoid wiping other non-auth app settings
   }
 
-  // Permission check helper — use this everywhere instead of role string comparisons
+  // ─── Permission Check ────────────────────────────────────────────
   function can(permission) {
-    if (!user) return false;
+    if (!user || !user.role) return false;
     const allowed = PERMISSIONS[permission];
-    if (!allowed) return false;
-    return allowed.includes(user.role);
+    return allowed ? allowed.includes(user.role) : false;
   }
 
   // Convenience booleans
@@ -105,7 +115,6 @@ export function AuthProvider({ children }) {
   );
 }
 
-// Custom hook — import this in every component that needs auth
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');

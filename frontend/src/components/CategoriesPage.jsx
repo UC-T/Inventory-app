@@ -8,17 +8,6 @@ const ICON_MAP = { Camera, HardDrive, Monitor, Cable, Cpu, Wrench, Box, Shield, 
 const COLOR_OPTIONS = ['primary','info','success','warning'];
 const ICON_OPTIONS  = Object.keys(ICON_MAP);
 
-// const MOCK_CATEGORIES = [
-//   { id: 1, name: 'Cameras',        icon: 'Camera',    assetCount: 156, consumableCount: 0,   color: 'primary' },
-//   { id: 2, name: 'Recording',      icon: 'HardDrive', assetCount: 48,  consumableCount: 24,  color: 'info'    },
-//   { id: 3, name: 'Displays',       icon: 'Monitor',   assetCount: 32,  consumableCount: 0,   color: 'success' },
-//   { id: 4, name: 'Cables',         icon: 'Cable',     assetCount: 0,   consumableCount: 890, color: 'warning' },
-//   { id: 5, name: 'Network',        icon: 'Cpu',       assetCount: 67,  consumableCount: 156, color: 'primary' },
-//   { id: 6, name: 'Tools',          icon: 'Wrench',    assetCount: 45,  consumableCount: 234, color: 'info'    },
-//   { id: 7, name: 'Enclosures',     icon: 'Box',       assetCount: 0,   consumableCount: 312, color: 'success' },
-//   { id: 8, name: 'Access Control', icon: 'Shield',    assetCount: 89,  consumableCount: 67,  color: 'warning' },
-// ];
-
 const EMPTY_FORM = { name: '', icon: 'Tag', color: 'primary' };
 
 // ─── Add / Edit Modal ─────────────────────────────────────────────
@@ -39,12 +28,25 @@ function CategoryModal({ category, onClose, onSave }) {
     if (!validate()) return;
     setSaving(true);
     try {
+      // POINT 1 & 2: Sending structured data to the Backend
+      const payload = {
+        name: form.name.trim(),
+        icon: form.icon,
+        color: form.color
+      };
+
       const result = isEdit
-        ? await categoriesAPI.update(category.id, form)
-        : await categoriesAPI.create(form);
+        ? await categoriesAPI.update(category.id, payload)
+        : await categoriesAPI.create(payload);
+      
+      // We pass the REAL result from the API back to the main state
       onSave(result);
-    } catch {
-      onSave({ ...form, id: Date.now(), assetCount: 0, consumableCount: 0 });
+    } catch (err) {
+      // POINT 1 FIX: Removed the 'MOCK' object creation. 
+      // If the API fails, we stop here and show the real error.
+      const errorMsg = err.response?.data?.msg || err.response?.data?.error || "Connection failed";
+      setErrors({ server: `Database Error: ${errorMsg}` });
+      console.error("API Failure:", err);
     } finally {
       setSaving(false);
     }
@@ -52,7 +54,7 @@ function CategoryModal({ category, onClose, onSave }) {
 
   function set(field, value) {
     setForm(p => ({ ...p, [field]: value }));
-    setErrors(p => ({ ...p, [field]: undefined }));
+    setErrors(p => ({ ...p, [field]: undefined, server: undefined }));
   }
 
   const PreviewIcon = ICON_MAP[form.icon] || Tag;
@@ -65,13 +67,14 @@ function CategoryModal({ category, onClose, onSave }) {
           <button className="modal-close" onClick={onClose}><X size={16} /></button>
         </div>
 
-        {/* Live preview */}
         <div className="cat-preview">
           <div className={`category-icon category-icon--${form.color}`}>
             <PreviewIcon size={24} />
           </div>
           <span className="cat-preview__name">{form.name || 'Category Name'}</span>
         </div>
+
+        {errors.server && <div className="form-error-banner">{errors.server}</div>}
 
         <div className="form-group">
           <label className="form-label">Category Name *</label>
@@ -122,11 +125,17 @@ function CategoryModal({ category, onClose, onSave }) {
 // ─── Delete Confirm ───────────────────────────────────────────────
 function DeleteConfirm({ category, onClose, onConfirm }) {
   const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState(null);
 
   async function handleDelete() {
     setDeleting(true);
-    try { await categoriesAPI.delete(category.id); } catch {}
-    onConfirm(category.id);
+    try { 
+      await categoriesAPI.delete(category.id); 
+      onConfirm(category.id);
+    } catch (err) {
+      setError("Delete failed. Check network connection.");
+      setDeleting(false);
+    }
   }
 
   return (
@@ -138,7 +147,7 @@ function DeleteConfirm({ category, onClose, onConfirm }) {
         </div>
         <p className="modal-body-text">
           Delete <strong>{category.name}</strong>?
-          Assets and consumables in this category will become uncategorised.
+          {error && <span className="form-error" style={{display:'block', marginTop:'10px'}}>{error}</span>}
         </p>
         <div className="modal-actions">
           <button className="btn btn--secondary" onClick={onClose}>Cancel</button>
@@ -151,22 +160,27 @@ function DeleteConfirm({ category, onClose, onConfirm }) {
   );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────
+// ─── Main Page ──────────────────────────────────────────────────
 function CategoriesPage() {
   const { can } = useAuth();
   const [categories, setCategories] = useState([]);
-  const [search,     setSearch]     = useState('');
-  const [addModal,   setAddModal]   = useState(false);
-  const [editItem,   setEditItem]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [addModal, setAddModal] = useState(false);
+  const [editItem, setEditItem] = useState(null);
   const [deleteItem, setDeleteItem] = useState(null);
 
+  // POINT 3: Ensuring initial load is real
   useEffect(() => {
     async function load() {
+      setLoading(true);
       try {
-        const data = await categoriesAPI.getAll(); // Ensure this sends the Bearer token
-        setCategories(data);
+        const data = await categoriesAPI.getAll();
+        setCategories(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error("Failed to load categories:", err);
+      } finally {
+        setLoading(false);
       }
     }
     load();
@@ -176,8 +190,8 @@ function CategoriesPage() {
     !search || c.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Within handleSaved
   function handleSaved(saved) {
+    // This logic now ONLY runs if the API call in CategoryModal was successful
     setCategories(prev => {
       const exists = prev.find(c => c.id === saved.id);
       return exists 
@@ -188,7 +202,6 @@ function CategoriesPage() {
     setEditItem(null);
   }
 
-  // Within handleDeleted
   function handleDeleted(id) {
     setCategories(prev => prev.filter(c => c.id !== id));
     setDeleteItem(null);
@@ -220,48 +233,51 @@ function CategoriesPage() {
         <span className="results-count">{filtered.length} categories</span>
       </div>
 
-      <div className="categories-grid">
-        {filtered.map(category => {
-          const Icon = ICON_MAP[category.icon] || Tag;
-          // Data now comes from the Backend to_dict()
-          const total = (category.assetCount || 0) + (category.consumableCount || 0);
-          
-          return (
-            <div key={category.id} className="category-card">
-              {can('category_manage') && (
-                <div className="category-card-actions">
-                  <button className="icon-btn" title="Edit" onClick={() => setEditItem(category)}>
-                    <Edit size={13} />
-                  </button>
-                  <button className="icon-btn icon-btn--danger" title="Delete" onClick={() => setDeleteItem(category)}>
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              )}
+      {loading ? (
+        <div className="loading-state">Loading from Supabase...</div>
+      ) : (
+        <div className="categories-grid">
+          {filtered.map(category => {
+            const Icon = ICON_MAP[category.icon] || Tag;
+            const total = (category.assetCount || 0) + (category.consumableCount || 0);
+            
+            return (
+              <div key={category.id} className="category-card">
+                {can('category_manage') && (
+                  <div className="category-card-actions">
+                    <button className="icon-btn" title="Edit" onClick={() => setEditItem(category)}>
+                      <Edit size={13} />
+                    </button>
+                    <button className="icon-btn icon-btn--danger" title="Delete" onClick={() => setDeleteItem(category)}>
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                )}
 
-              <div className={`category-icon category-icon--${category.color}`}>
-                <Icon size={24} />
-              </div>
-              <h3 className="category-name">{category.name}</h3>
-              <div className="category-count">
-                <span className="count-value">{total}</span>
-                <span className="count-label">Total Items</span>
-              </div>
-              <div className="category-breakdown">
-                <div className="breakdown-item">
-                  <span className="breakdown-value">{category.assetCount || 0}</span>
-                  <span className="breakdown-label">Assets</span>
+                <div className={`category-icon category-icon--${category.color}`}>
+                  <Icon size={24} />
                 </div>
-                <div className="breakdown-divider" />
-                <div className="breakdown-item">
-                  <span className="breakdown-value">{category.consumableCount || 0}</span>
-                  <span className="breakdown-label">Consumables</span>
+                <h3 className="category-name">{category.name}</h3>
+                <div className="category-count">
+                  <span className="count-value">{total}</span>
+                  <span className="count-label">Total Items</span>
+                </div>
+                <div className="category-breakdown">
+                  <div className="breakdown-item">
+                    <span className="breakdown-value">{category.assetCount || 0}</span>
+                    <span className="breakdown-label">Assets</span>
+                  </div>
+                  <div className="breakdown-divider" />
+                  <div className="breakdown-item">
+                    <span className="breakdown-value">{category.consumableCount || 0}</span>
+                    <span className="breakdown-label">Consumables</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {addModal   && <CategoryModal onClose={() => setAddModal(false)} onSave={handleSaved} />}
       {editItem   && <CategoryModal category={editItem} onClose={() => setEditItem(null)} onSave={handleSaved} />}

@@ -7,23 +7,11 @@ from flask_jwt_extended import get_jwt_identity
 import pandas as pd
 from flask import send_file
 from flask_cors import CORS
+from datetime import timedelta
 import io
 import os
 
 api = Blueprint('api', __name__)
-
-# app = Flask(__name__)                      # 2. Create 'app' HERE (Crucial!)
-# app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this to a real secret key in production
-# jwt = JWTManager(app)
-# flask_bcrypt.init_app(app)
-# CORS(app) # This allows your frontend to talk to your backend
-
-# # 3. Database Configurations
-# basedir = os.path.abspath(os.path.dirname(__file__))
-# app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'inventory.db')
-# app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# db.init_app(app)                           # 4. Initialize DB with app
 
 # --- DEFINE THE DECORATOR HERE (Before the routes) ---
 # Helper Function: Check if the user is an admin
@@ -170,13 +158,21 @@ def get_all_users():
 @api.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
+
+    # 1. Find user (Using your existing User model)
     user = User.query.filter_by(username=data['username']).first()
     
-    if user and user.check_password(data['password']):
-        access_token = create_access_token(identity=str(user.id))
-        return jsonify(access_token=access_token)
+    # 2. Check password (using flask_bcrypt)
+    if user and flask_bcrypt.check_password_hash(user.password_hash, password):
+        # 3. GENERATE REAL TOKEN
+        # We store the user ID in the 'identity'
+        access_token = create_access_token(identity=str(user.id), expires_delta=timedelta(days=1))
+        return jsonify({
+            "token": access_token,
+            "user": user.to_dict()
+        }), 200
     
-    return jsonify({"message": "Invalid credentials"}), 401
+    return jsonify({"error": "Invalid email or password"}), 401
 
 # ROUTE: Get Dashboard Data (Protected)
 @api.route('/dashboard', methods=['GET'])
@@ -212,6 +208,7 @@ def get_dashboard():
 def handle_categories():
     if request.method == 'POST':
         data = request.json
+        print(f"DEBUG DATA RECEIVED: {data}")
     try:
         # Check if category name already exists to prevent 500 errors
         if Category.query.filter_by(name=data.get('name')).first():

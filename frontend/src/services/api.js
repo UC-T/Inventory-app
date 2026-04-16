@@ -17,8 +17,13 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
-    if (token) {
+    // Check if token exists AND isn't the string "null" or "undefined"
+    if (token && token !== 'null' && token !== 'undefined') {
       config.headers.Authorization = `Bearer ${token}`;
+    } else {
+      // If no valid token, we don't send the header at all
+      // This forces a 401 Unauthorized instead of a messy 422
+      delete config.headers.Authorization;
     }
     return config;
   },
