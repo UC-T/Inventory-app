@@ -4,14 +4,14 @@ import { useAuth } from '../context/AuthContext';
 import { locationsAPI } from '../services/api';
 import '../styling/LocationsPage.css';
 
-const MOCK_LOCATIONS = [
-  { id: 1, name: 'Warehouse A',              type: 'warehouse', address: '1234 Industrial Blvd, Suite 100', assetCount: 342, consumableCount: 1250 },
-  { id: 2, name: 'Warehouse B',              type: 'warehouse', address: '5678 Commerce Dr',                assetCount: 128, consumableCount: 890  },
-  { id: 3, name: 'Service Vehicle #1',       type: 'vehicle',   address: 'Mobile — GPS Tracked',           assetCount: 45,  consumableCount: 120  },
-  { id: 4, name: 'Service Vehicle #2',       type: 'vehicle',   address: 'Mobile — GPS Tracked',           assetCount: 38,  consumableCount: 95   },
-  { id: 5, name: 'Site #8 — Downtown Office',type: 'jobsite',   address: '789 Main Street, Floor 3',       assetCount: 24,  consumableCount: 0    },
-  { id: 6, name: 'Site #12 — Tech Campus',   type: 'jobsite',   address: '321 Innovation Way',             assetCount: 67,  consumableCount: 45   },
-];
+// const MOCK_LOCATIONS = [
+//   { id: 1, name: 'Warehouse A',              type: 'warehouse', address: '1234 Industrial Blvd, Suite 100', assetCount: 342, consumableCount: 1250 },
+//   { id: 2, name: 'Warehouse B',              type: 'warehouse', address: '5678 Commerce Dr',                assetCount: 128, consumableCount: 890  },
+//   { id: 3, name: 'Service Vehicle #1',       type: 'vehicle',   address: 'Mobile — GPS Tracked',           assetCount: 45,  consumableCount: 120  },
+//   { id: 4, name: 'Service Vehicle #2',       type: 'vehicle',   address: 'Mobile — GPS Tracked',           assetCount: 38,  consumableCount: 95   },
+//   { id: 5, name: 'Site #8 — Downtown Office',type: 'jobsite',   address: '789 Main Street, Floor 3',       assetCount: 24,  consumableCount: 0    },
+//   { id: 6, name: 'Site #12 — Tech Campus',   type: 'jobsite',   address: '321 Innovation Way',             assetCount: 67,  consumableCount: 45   },
+// ];
 
 const TYPE_CONFIG = {
   warehouse: { label: 'Warehouse', icon: Building2, className: 'type--warehouse' },
@@ -164,7 +164,7 @@ function DeleteConfirm({ location, onClose, onConfirm }) {
 // ─── Main ─────────────────────────────────────────────────────────
 function LocationsPage() {
   const { can } = useAuth();
-  const [locations,  setLocations]  = useState(MOCK_LOCATIONS);
+  const [locations,  setLocations]  = useState([]);
   const [search,     setSearch]     = useState('');
   const [filterType, setFilterType] = useState('all');
   const [addModal,   setAddModal]   = useState(false);

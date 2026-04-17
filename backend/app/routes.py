@@ -1,13 +1,14 @@
 from flask import Flask, jsonify, request, Blueprint  # <--- Ensure Blueprint is here # 1. Imports first
 # from .models import db, AssetItem
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
-from .models import db, AssetItem, User, flask_bcrypt, Category, Location, Consumable
+from .models import db, AssetItem, User, flask_bcrypt, Category, Location, Consumable, AuditLog
 from functools import wraps
 from flask_jwt_extended import get_jwt_identity
 import pandas as pd
 from flask import send_file
 from flask_cors import CORS
-from datetime import timedelta
+from datetime import timedelta, datetime
+from sqlalchemy.exc import IntegrityError
 import io
 import os
 
@@ -46,12 +47,22 @@ def add_item():
             assigned_to=data.get('assigned_to'),
             ip_address=data.get('ip_address'),
             mac_address=data.get('mac_address'),
+
+            # ─── THE MISSING PIECES ────────────────────────────────
+            # Map the IDs coming from your React dropdowns
+            category_id=data.get('category_id'), 
+            location_id=data.get('location_id'),
+            # ───────────────────────────────────────────────────────
+
             # Convert string date to Python date object
             warranty_date=datetime.strptime(data['warranty_date'], '%Y-%m-%d').date() if data.get('warranty_date') else None
         )
         
-        db.session.add(new_asset)
+        db.session.add(new_item)
         
+        # 2. Flush to get the ID for the audit log
+        db.session.flush()
+
         # Log the action
         log = AuditLog(user_id=get_jwt_identity(), action=f"Created asset: {new_item.name}")
         db.session.add(log)
@@ -60,6 +71,7 @@ def add_item():
         return jsonify(new_item.to_dict()), 201
     except Exception as e:
         db.session.rollback()
+        print(f"--- ❌ ASSET CREATE ERROR: {str(e)} ---")
         return jsonify({"error": str(e)}), 500
 
 # ROUTE: Update an item's quantity or price
@@ -160,18 +172,37 @@ def login():
     data = request.get_json()
 
     # 1. Find user (Using your existing User model)
-    user = User.query.filter_by(username=data['username']).first()
+    # user = User.query.filter_by(username=data['username']).first()
     
+    # ─── THE FIX ────────────────────────────────────────────────
+    # Change 'username' to 'email' to match your React Form
+    email = data.get('email')
+    password = data.get('password')
+
+    if not email or not password:
+        return jsonify({"error": "Email and password are required"}), 400
+
     # 2. Check password (using flask_bcrypt)
+    # if user and flask_bcrypt.check_password_hash(user.password_hash, password):
+    #     # 3. GENERATE REAL TOKEN
+    #     # We store the user ID in the 'identity'
+    #     access_token = create_access_token(identity=str(user.id), expires_delta=timedelta(days=1))
+    #     return jsonify({
+    #         "token": access_token,
+    #         "user": user.to_dict()
+    #     }), 200
+    
+    # Query using email, NOT username
+    user = User.query.filter_by(email=email).first()
+    # ────────────────────────────────────────────────────────────
+
     if user and flask_bcrypt.check_password_hash(user.password_hash, password):
-        # 3. GENERATE REAL TOKEN
-        # We store the user ID in the 'identity'
-        access_token = create_access_token(identity=str(user.id), expires_delta=timedelta(days=1))
+        access_token = create_access_token(identity=str(user.id))
         return jsonify({
             "token": access_token,
             "user": user.to_dict()
         }), 200
-    
+
     return jsonify({"error": "Invalid email or password"}), 401
 
 # ROUTE: Get Dashboard Data (Protected)
@@ -203,40 +234,58 @@ def get_dashboard():
         "recent_assets": [i.to_dict() for i in items[-5:]] # Show last 5 added
     })
 
-@api.route('/categories', methods=['POST', 'GET'])
+@api.route('/categories', methods=['GET', 'POST'])
 @jwt_required()
 def handle_categories():
-    if request.method == 'POST':
-        data = request.json
-        print(f"DEBUG DATA RECEIVED: {data}")
-    try:
-        # Check if category name already exists to prevent 500 errors
-        if Category.query.filter_by(name=data.get('name')).first():
-            return jsonify({"error": "Category already exists"}), 400
+    # ─── USE CASE 1: RETRIEVE ALL (GET) ──────────────────────────
+    if request.method == 'GET':
+        try:
+            categories = Category.query.all()
+            # Uses the to_dict() we improved earlier to get counts
+            return jsonify([c.to_dict() for c in categories]), 200
+        except Exception as e:
+            return jsonify({"error": "Failed to fetch categories", "details": str(e)}), 500
 
-        new_cat = Category(
-            name=data.get('name'),
-            icon=data.get('icon', 'Tag'),    # Matches the default in your React form
-            color=data.get('color', 'primary')
-        )
-        
-        db.session.add(new_cat)
-        
-        # Log the action for your Audit Feed
-        log = AuditLog(
-            user_id=get_jwt_identity(), 
-            action=f"Created Category: {new_cat.name}"
-        )
-        db.session.add(log)
-        
-        db.session.commit()
-        return jsonify(new_cat.to_dict()), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-    
-    categories = Category.query.all()
-    return jsonify([{"id": c.id, "name": c.name, "icon": c.icon, "color": c.color} for c in categories])
+    # ─── USE CASE 2: CREATE NEW (POST) ───────────────────────────
+    if request.method == 'POST':
+        data = request.get_json()
+        print(f"DEBUG DATA RECEIVED: {data}")
+
+        if not data or 'name' not in data:
+            return jsonify({"error": "Category name is required"}), 400
+
+        try:
+            # 1. Check for duplicates
+            if Category.query.filter_by(name=data.get('name').strip()).first():
+                return jsonify({"error": f"Category '{data.get('name')}' already exists"}), 409
+
+            # 2. Create the Category
+            new_cat = Category(
+                name=data.get('name').strip(),
+                icon=data.get('icon', 'Tag'),
+                color=data.get('color', 'primary')
+            )
+            db.session.add(new_cat)
+            
+            # 3. Flush to generate the ID for the log, but don't commit yet
+            db.session.flush() 
+
+            # 4. Audit Log Entry
+            # Note: get_jwt_identity usually returns the user.id as a string
+            log = AuditLog(
+                user_id=int(get_jwt_identity()), 
+                action=f"Created Category: {new_cat.name}"
+            )
+            db.session.add(log)
+            
+            # 5. Final Commit
+            db.session.commit()
+            return jsonify(new_cat.to_dict()), 201
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"--- ❌ CATEGORY POST ERROR: {str(e)} ---")
+            return jsonify({"error": "Database write failed", "details": str(e)}), 500
 
 # --- UPDATE CATEGORY ---
 @api.route('/categories/<int:id>', methods=['PUT'])
@@ -266,18 +315,26 @@ def delete_category_by_id(cat_id):
     db.session.commit()
     return jsonify({"message": f"Category '{category.name}' deleted successfully"}), 200
 
-@api.route('/locations', methods=['POST', 'GET'])
+@api.route('/locations', methods=['GET', 'POST'])
 @jwt_required()
 def handle_locations():
+    if request.method == 'GET':
+        return jsonify([l.to_dict() for l in Location.query.all()]), 200
+
     if request.method == 'POST':
-        name = request.json.get('name')
-        new_loc = Location(name=name)
+        data = request.get_json()
+        # VALIDATION: Prevent "Ghost" locations with no name
+        if not data.get('name'):
+            return jsonify({"error": "Location name is required"}), 400
+            
+        new_loc = Location(
+            name=data['name'],
+            type=data.get('type', 'Site'),
+            address=data.get('address', '') # Save the new address field
+        )
         db.session.add(new_loc)
         db.session.commit()
-        return jsonify({"msg": "Location added"}), 201
-    
-    locations = Location.query.all()
-    return jsonify([{"id": l.id, "name": l.name} for l in locations])
+        return jsonify(new_loc.to_dict()), 201
 
 # --- DELETE LOCATION ---
 @api.route('/locations/<int:loc_id>', methods=['DELETE'])
@@ -297,11 +354,12 @@ def delete_location_by_id(loc_id):
     # 2. USE CASE: Dependency Check (The "Showstopper")
     # Check if any Assets are still linked to this location
     linked_assets_count = AssetItem.query.filter_by(location_id=loc_id).count()
+    linked_consumables_count = Consumable.query.filter_by(location_id=loc_id).count()
     
     if linked_assets_count > 0:
         return jsonify({
             "error": "Conflict",
-            "message": f"Cannot delete '{location.name}'. It still has {linked_assets_count} assets assigned to it.",
+            "message": f"Cannot delete '{location.name}'. It is still linked to {linked_assets_count} assets and {linked_consumables_count} consumables.",
             "status": 409
         }), 409
 
@@ -326,59 +384,59 @@ def delete_location_by_id(loc_id):
 @api.route('/consumables', methods=['GET', 'POST'])
 @jwt_required()
 def handle_consumables():
-    # ─── USE CASE 1: RETRIEVE ALL CONSUMABLES (GET) ──────────────────
+    # ─── USE CASE 1: RETRIEVE ALL (GET) ──────────────────────────
     if request.method == 'GET':
         try:
-            consumables = Consumable.query.all()
-            return jsonify([c.to_dict() for c in consumables]), 200
+            items = Consumable.query.all()
+            # ─── DEBUG PRINT ────────────────────────────────────
+            print(f"--- 📦 DATABASE FETCH: Found {len(items)} items in Supabase ---")
+            # ────────────────────────────────────────────────────
+            # Standardized to_dict() handles the conversion
+            return jsonify([i.to_dict() for i in items]), 200
         except Exception as e:
-            return jsonify({"error": "Failed to fetch data", "details": str(e)}), 500
+            print(f"--- ❌ GET CONSUMABLES FAILED: {str(e)} ---")
+            return jsonify({"error": str(e)}), 500
 
-    # ─── USE CASE 2: ADD NEW CONSUMABLE (POST) ───────────────────────
+    # ─── USE CASE 2: ADD NEW (POST) ──────────────────────────────
     if request.method == 'POST':
         data = request.get_json()
 
-        # 1. Validation: Added 'sku' as a required field based on the new model
-        required_fields = ['name', 'sku', 'quantity']
-        if not data or not all(k in data for k in required_fields):
-            return jsonify({
-                "error": "Missing required fields", 
-                "required": required_fields
-            }), 400
-
-        # 2. Validation: Ensure quantity and minStock (threshold) are valid
-        try:
-            qty = int(data['quantity'])
-            # We use 'minStock' from frontend or 'min_threshold' from direct API calls
-            threshold = int(data.get('minStock', data.get('min_threshold', 5)))
-            if qty < 0 or threshold < 0:
-                raise ValueError
-        except (ValueError, TypeError):
-            return jsonify({"error": "Quantity and threshold must be positive integers"}), 400
+        # Validation: Standardizing keys
+        # We now accept 'min_threshold' directly from the frontend
+        required = ['name', 'sku', 'quantity']
+        if not data or not all(k in data for k in required):
+            return jsonify({"error": "Missing required fields", "required": required}), 400
 
         try:
+            # Type Casting and Validation
+            qty = int(data.get('quantity', 0))
+            # Fallback for threshold to ensure no crash if field is named 'minStock'
+            threshold = int(data.get('min_threshold', data.get('minStock', 5)))
+
             new_con = Consumable(
                 name=data['name'].strip(),
-                sku=data['sku'].strip().upper(), # Standardize SKU to uppercase
+                sku=data['sku'].strip().upper(),
                 quantity=qty,
                 min_threshold=threshold,
-                # Optional Relationships
-                category_id=data.get('category_id'), 
+                category_id=data.get('category_id'),
                 location_id=data.get('location_id')
             )
-            
+
             db.session.add(new_con)
-            db.session.commit()
             
-            return jsonify({
-                "message": "Consumable added successfully",
-                "consumable": new_con.to_dict()
-            }), 201
+            # Audit Trail
+            log = AuditLog(
+                user_id=int(get_jwt_identity()),
+                action=f"Added Consumable: {new_con.name} (Qty: {qty})"
+            )
+            db.session.add(log)
+            
+            db.session.commit()
+            return jsonify(new_con.to_dict()), 201
 
         except IntegrityError:
             db.session.rollback()
-            # This triggers if the SKU is a duplicate
-            return jsonify({"error": "A consumable with this SKU already exists"}), 409
+            return jsonify({"error": "Duplicate entry: Name or SKU already exists"}), 409
         except Exception as e:
             db.session.rollback()
             return jsonify({"error": "Database error", "details": str(e)}), 500
@@ -417,38 +475,26 @@ def bulk_delete_consumables():
 # ─── DELETE BY QUANTITY (ISSUE / REDUCE STOCK) ───────────────────
 @api.route('/consumables/<int:con_id>/reduce', methods=['POST'])
 @jwt_required()
-def reduce_consumable_quantity(con_id):
-    consumable = Consumable.query.get_or_404(con_id)
+def update_consumable(con_id):
+    item = Consumable.query.get_or_404(con_id)
     data = request.get_json()
 
-    # 1. Validation
-    if not data or 'quantity' not in data:
-        return jsonify({"error": "Quantity to remove is required"}), 400
-
     try:
-        reduce_qty = int(data['quantity'])
-        if reduce_qty <= 0:
-            return jsonify({"error": "Quantity must be greater than zero"}), 400
-            
-        # 2. Check for sufficient stock
-        if reduce_qty > consumable.quantity:
-            return jsonify({
-                "error": "Insufficient stock",
-                "current_stock": consumable.quantity
-            }), 400
+        # Update fields if they exist in the request
+        if 'name' in data: item.name = data['name'].strip()
+        if 'sku' in data: item.sku = data['sku'].strip().upper()
+        if 'quantity' in data: item.quantity = int(data['quantity'])
+        
+        # Consistent mapping for threshold
+        if 'min_threshold' in data or 'minStock' in data:
+            item.min_threshold = int(data.get('min_threshold', data.get('minStock')))
 
-        # 3. Perform the reduction
-        consumable.quantity -= reduce_qty
+        if 'category_id' in data: item.category_id = data['category_id']
+        if 'location_id' in data: item.location_id = data['location_id']
+
         db.session.commit()
+        return jsonify(item.to_dict()), 200
 
-        return jsonify({
-            "message": f"Successfully removed {reduce_qty} units from {consumable.name}",
-            "new_quantity": consumable.quantity,
-            "is_low_stock": consumable.quantity <= consumable.min_threshold
-        }), 200
-
-    except (ValueError, TypeError):
-        return jsonify({"error": "Invalid quantity format"}), 400
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Update failed", "details": str(e)}), 500

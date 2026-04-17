@@ -1,27 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, AlertTriangle, Package, X, ArrowDown, ArrowUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { consumablesAPI } from '../services/api';
+import { consumablesAPI, categoriesAPI, locationsAPI } from '../services/api';
 import '../styling/ConsumablesPage.css';
 
-// const MOCK_CONSUMABLES = [
-//   { id: 1, name: 'RG-6 Coax Cable (1000ft)', sku: 'CBL-RG6-1K',   quantity: 2,  minStock: 5,  category: 'Cables',      location: 'Warehouse A' },
-//   { id: 2, name: 'BNC Connectors (100pk)',   sku: 'CON-BNC-100',  quantity: 45, minStock: 20, category: 'Connectors',  location: 'Warehouse A' },
-//   { id: 3, name: 'Cat6 Cable (500ft)',        sku: 'CBL-CAT6-500', quantity: 8,  minStock: 10, category: 'Cables',      location: 'Warehouse B' },
-//   { id: 4, name: 'Power Supply 12V 2A',       sku: 'PWR-12V-2A',   quantity: 32, minStock: 15, category: 'Power',       location: 'Warehouse A' },
-//   { id: 5, name: 'Mounting Brackets',         sku: 'MNT-BRK-UNI', quantity: 78, minStock: 25, category: 'Hardware',    location: 'Warehouse A' },
-//   { id: 6, name: 'Weatherproof Junction Box', sku: 'BOX-WP-SM',   quantity: 12, minStock: 20, category: 'Enclosures',  location: 'Warehouse B' },
-// ];
-
-function getStockStatus(quantity, minStock) {
-  if (quantity <= 0)         return { label: 'Out of Stock', cls: 'stock--out' };
-  if (quantity < minStock)   return { label: 'Low Stock',    cls: 'stock--low' };
-  if (quantity < minStock*1.5) return { label: 'Medium',     cls: 'stock--medium' };
-  return                            { label: 'In Stock',     cls: 'stock--ok' };
-}
-
-function getStockPct(qty, min) {
-  return Math.min(100, Math.round((qty / (min * 2)) * 100));
+// ─── UTILS ────────────────────────────────────────────────────────
+function getStockStatus(quantity, min_threshold) {
+  if (quantity <= 0)           return { label: 'Out of Stock', cls: 'stock--out' };
+  if (quantity < min_threshold)   return { label: 'Low Stock',     cls: 'stock--low' };
+  if (quantity < min_threshold * 1.5) return { label: 'Medium',      cls: 'stock--medium' };
+  return                            { label: 'In Stock',      cls: 'stock--ok' };
 }
 
 // ─── Stock-In Modal ───────────────────────────────────────────────
@@ -36,10 +24,14 @@ function StockInModal({ item, onClose, onSave }) {
     if (!n || n <= 0) { setErr('Enter a valid quantity greater than 0'); return; }
     setSaving(true);
     try {
-      await consumablesAPI.stockIn(item.id, { quantity: n, reason });
-    } catch { /* mock */ }
-    onSave(item.id, n, 'in', reason);
-    setSaving(false);
+      // Backend expects { quantity: n }
+      const updatedItem = await consumablesAPI.stockIn(item.id, { quantity: n, reason });
+      onSave(updatedItem);
+    } catch (error) {
+      setErr('Failed to update stock in Supabase');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -89,10 +81,14 @@ function IssueModal({ item, onClose, onSave }) {
     if (n > item.quantity){ setErr(`Cannot issue more than current stock (${item.quantity})`); return; }
     setSaving(true);
     try {
-      await consumablesAPI.issue(item.id, { quantity: n, reason, issued_to: issueTo });
-    } catch { /* mock */ }
-    onSave(item.id, n, 'out', reason);
-    setSaving(false);
+      // Backend /reduce endpoint
+      const updatedItem = await consumablesAPI.issue(item.id, { quantity: n, reason, issued_to: issueTo });
+      onSave(updatedItem);
+    } catch (error) {
+      setErr('Failed to issue stock from Supabase');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -136,9 +132,15 @@ function IssueModal({ item, onClose, onSave }) {
 }
 
 // ─── Add / Edit Consumable Modal ──────────────────────────────────
-function ConsumableModal({ item, onClose, onSave }) {
+function ConsumableModal({ item, categories, locations, onClose, onSave }) {
   const isEdit = !!item;
-  const [form, setForm] = useState(item || { name:'', sku:'', quantity:0, minStock:10, category:'', location:'' });
+  // Consistency: use min_threshold, category_id, location_id
+  const [form, setForm] = useState(item ? {
+    ...item,
+    category_id: item.category_id || '',
+    location_id: item.location_id || ''
+  } : { name:'', sku:'', quantity:0, min_threshold:10, category_id:'', location_id:'' });
+  
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
 
@@ -154,12 +156,17 @@ function ConsumableModal({ item, onClose, onSave }) {
     if (!validate()) return;
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        quantity: parseInt(form.quantity),
+        min_threshold: parseInt(form.min_threshold)
+      };
       const result = isEdit
-        ? await consumablesAPI.update(item.id, form)
-        : await consumablesAPI.create(form);
+        ? await consumablesAPI.update(item.id, payload)
+        : await consumablesAPI.create(payload);
       onSave(result);
-    } catch {
-      onSave({ ...form, id: Date.now() });
+    } catch (err) {
+      setErrors({ server: "Failed to sync with Supabase" });
     } finally {
       setSaving(false);
     }
@@ -202,26 +209,26 @@ function ConsumableModal({ item, onClose, onSave }) {
           </div>
           <div className="form-group">
             <label className="form-label">Min Stock Threshold</label>
-            <input type="number" min="1" className="form-input" value={form.minStock}
-              onChange={e => set('minStock', parseInt(e.target.value) || 1)} />
+            <input type="number" min="1" className="form-input" value={form.min_threshold}
+              onChange={e => set('min_threshold', parseInt(e.target.value) || 1)} />
           </div>
         </div>
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Category</label>
-            <select className="form-select" value={form.category} onChange={e => set('category', e.target.value)}>
-              <option value="">Select…</option>
-              {['Cables','Connectors','Power','Hardware','Enclosures','Network','Tools'].map(c => (
-                <option key={c} value={c}>{c}</option>
+            <select className="form-select" value={form.category_id} onChange={e => set('category_id', e.target.value)}>
+              <option value="">Select Category...</option>
+              {categories.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
           </div>
           <div className="form-group">
             <label className="form-label">Location</label>
-            <select className="form-select" value={form.location} onChange={e => set('location', e.target.value)}>
-              <option value="">Select…</option>
-              {['Warehouse A','Warehouse B','Service Center'].map(l => (
-                <option key={l} value={l}>{l}</option>
+            <select className="form-select" value={form.location_id} onChange={e => set('location_id', e.target.value)}>
+              <option value="">Select Location...</option>
+              {locations.map(l => (
+                <option key={l.id} value={l.id}>{l.name}</option>
               ))}
             </select>
           </div>
@@ -242,25 +249,35 @@ function ConsumableModal({ item, onClose, onSave }) {
 function ConsumablesPage() {
   const { can } = useAuth();
 
-  const [items,   setItems]   = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [search,  setSearch]  = useState('');
+  const [items,      setItems]      = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [locations,  setLocations]  = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [search,     setSearch]     = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
 
-  // Modals
-  const [addModal,     setAddModal]    = useState(false);
-  const [editItem,     setEditItem]    = useState(null);
+  const [addModal,     setAddModal]     = useState(false);
+  const [editItem,     setEditItem]     = useState(null);
   const [stockInItem,  setStockInItem] = useState(null);
-  const [issueItem,    setIssueItem]   = useState(null);
+  const [issueItem,    setIssueItem]    = useState(null);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const data = await consumablesAPI.getAll();
-        setItems(data);
-      } catch { /* keep mock */ }
-      setLoading(false);
+        const [cData, catData, locData] = await Promise.all([
+          consumablesAPI.getAll(),
+          categoriesAPI.getAll(),
+          locationsAPI.getAll()
+        ]);
+        setItems(cData);
+        setCategories(catData);
+        setLocations(locData);
+      } catch (err) {
+        console.error("Cloud fetch failed:", err);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -271,7 +288,9 @@ function ConsumablesPage() {
       item.name?.toLowerCase().includes(q) ||
       item.sku?.toLowerCase().includes(q) ||
       item.category?.toLowerCase().includes(q);
-    const status = getStockStatus(item.quantity, item.minStock).cls;
+    
+    // Status now uses backend column min_threshold
+    const status = getStockStatus(item.quantity, item.min_threshold).cls;
     const matchStatus =
       filterStatus === 'all' ||
       (filterStatus === 'low'  && (status === 'stock--low' || status === 'stock--out')) ||
@@ -279,16 +298,7 @@ function ConsumablesPage() {
     return matchSearch && matchStatus;
   });
 
-  function handleStockChange(id, qty, direction) {
-    setItems(prev => prev.map(i =>
-      i.id === id
-        ? { ...i, quantity: direction === 'in' ? i.quantity + qty : Math.max(0, i.quantity - qty) }
-        : i
-    ));
-    setStockInItem(null);
-    setIssueItem(null);
-  }
-
+  // Unified updater for Stock In / Issue / Edit
   function handleSaved(saved) {
     setItems(prev => {
       const exists = prev.find(i => i.id === saved.id);
@@ -296,9 +306,11 @@ function ConsumablesPage() {
     });
     setAddModal(false);
     setEditItem(null);
+    setStockInItem(null);
+    setIssueItem(null);
   }
 
-  const lowCount = items.filter(i => i.quantity < i.minStock).length;
+  const lowCount = items.filter(i => i.is_low_stock).length;
 
   return (
     <div className="consumables-page">
@@ -346,19 +358,19 @@ function ConsumablesPage() {
       ) : filtered.length === 0 ? (
         <div className="empty-state">
           <Package size={32} style={{ opacity: 0.2 }} />
-          <p>No items match your search</p>
+          <p>No items found in Supabase</p>
         </div>
       ) : (
         <div className="consumables-grid">
           {filtered.map(item => {
-            // 1. USE BACKEND LOGIC: We replace 'getStockStatus' and 'getStockPct' 
-            // with the real data from your Python to_dict()
+            // Consistency: use backend-provided flags
             const isLow = item.is_low_stock; 
-            const label = isLow ? (item.quantity <= 0 ? 'Out of Stock' : 'Low Stock') : 'In Stock';
-            const cls = isLow ? (item.quantity <= 0 ? 'stock--out' : 'stock--low') : 'stock--ok';
+            const statusData = getStockStatus(item.quantity, item.min_threshold);
+            const label = statusData.label;
+            const cls = statusData.cls;
             
-            // Keep the visual percentage for the UI bar
-            const pct = Math.min(100, Math.round((item.quantity / (item.minStock * 2)) * 100));
+            // UI Visual percentage
+            const pct = Math.min(100, Math.round((item.quantity / (item.min_threshold * 2)) * 100));
 
             return (
               <div key={item.id} className={`consumable-card ${isLow ? 'consumable-card--warning' : ''}`}>
@@ -379,15 +391,13 @@ function ConsumablesPage() {
                   <span className="quantity-label">units</span>
                 </div>
 
-                {/* UI PROGRESS BAR: Restored exactly as v0 intended */}
                 <div className="stock-bar-container">
                   <div className={`stock-bar ${cls}`} style={{ width: `${pct}%` }} />
                 </div>
 
                 <div className="consumable-footer">
-                  {/* UPDATED STATUS: Driven by backend 'is_low_stock' */}
                   <span className={`stock-status ${cls}`}>{label}</span>
-                  <span className="min-stock">Min: {item.minStock}</span>
+                  <span className="min-stock">Min: {item.min_threshold}</span>
                 </div>
 
                 <div className="consumable-meta">
@@ -422,10 +432,10 @@ function ConsumablesPage() {
         </div>
       )}
 
-      {addModal    && <ConsumableModal onClose={() => setAddModal(false)}  onSave={handleSaved} />}
-      {editItem    && <ConsumableModal item={editItem} onClose={() => setEditItem(null)} onSave={handleSaved} />}
-      {stockInItem && <StockInModal  item={stockInItem} onClose={() => setStockInItem(null)} onSave={handleStockChange} />}
-      {issueItem   && <IssueModal    item={issueItem}   onClose={() => setIssueItem(null)}   onSave={handleStockChange} />}
+      {addModal    && <ConsumableModal categories={categories} locations={locations} onClose={() => setAddModal(false)}  onSave={handleSaved} />}
+      {editItem    && <ConsumableModal item={editItem} categories={categories} locations={locations} onClose={() => setEditItem(null)} onSave={handleSaved} />}
+      {stockInItem && <StockInModal  item={stockInItem} onClose={() => setStockInItem(null)} onSave={handleSaved} />}
+      {issueItem   && <IssueModal    item={issueItem}   onClose={() => setIssueItem(null)}   onSave={handleSaved} />}
     </div>
   );
 }

@@ -4,15 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import { assetsAPI, categoriesAPI, locationsAPI } from '../services/api';
 import '../styling/AssetsPage.css';
 
-// ─── Static fallback data (used until backend is ready) ───────────
-// const MOCK_ASSETS = [
-//   { id: 1, asset_id: 'CAM-0042', name: 'PTZ Camera',          category: 'Cameras',   status: 'checked-out', location: 'Site #12',    assigned_to: 'John Davidson', serial: 'PTZ-2024-0042', ip_address: '192.168.1.42', mac_address: '00:1A:2B:3C:4D:5E', warranty_date: '2026-06-01' },
-//   { id: 2, asset_id: 'CAM-0043', name: 'Dome Camera',          category: 'Cameras',   status: 'available',   location: 'Warehouse A',  assigned_to: null,            serial: 'DOM-2024-0043', ip_address: '—',            mac_address: '—',                 warranty_date: '2027-01-15' },
-//   { id: 3, asset_id: 'DVR-0015', name: 'Network DVR 16CH',     category: 'Recording', status: 'available',   location: 'Warehouse A',  assigned_to: null,            serial: 'DVR-2024-0015', ip_address: '192.168.1.10', mac_address: 'AA:BB:CC:DD:EE:FF', warranty_date: '2025-11-01' },
-//   { id: 4, asset_id: 'MON-0028', name: '27" Security Monitor', category: 'Displays',  status: 'maintenance', location: 'Service Center',assigned_to: null,            serial: 'MON-2024-0028', ip_address: '—',            mac_address: '—',                 warranty_date: '2025-06-30' },
-//   { id: 5, asset_id: 'CAM-0044', name: 'Thermal Camera',       category: 'Cameras',   status: 'checked-out', location: 'Site #8',      assigned_to: 'Sarah Miller',  serial: 'THM-2024-0044', ip_address: '192.168.1.75', mac_address: '11:22:33:44:55:66', warranty_date: '2027-03-20' },
-// ];
-
 const STATUS_CONFIG = {
   'available':   { label: 'Available',   className: 'status--available' },
   'checked-out': { label: 'Checked Out', className: 'status--checked-out' },
@@ -21,47 +12,55 @@ const STATUS_CONFIG = {
 };
 
 const EMPTY_FORM = {
-  name: '', asset_id: '', serial: '', category: '',
-  location: '', status: 'available', assigned_to: '',
+  name: '', asset_id: '', serial: '', category_id: '',
+  location_id: '', status: 'available', assigned_to: '',
   ip_address: '', mac_address: '', warranty_date: '',
 };
 
 // ─── Sub-components ───────────────────────────────────────────────
 
 function AssetModal({ asset, onClose, onSave, categories, locations }) {
-  const [form, setForm] = useState({ ...EMPTY_FORM });
+  const isEdit = !!asset;
+  const [form, setForm] = useState(asset ? {
+    ...asset,
+    category_id: asset.category_id || '',
+    location_id: asset.location_id || ''
+  } : { ...EMPTY_FORM });
+  
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
-  const isEdit = !!asset;
 
   function validate() {
     const e = {};
-    if (!form.name.trim())   e.name   = 'Name is required';
-    // if (!form.serial.trim()) e.serial = 'Serial number is required';
-    if (!form.category)      e.category = 'Category is required';
-    if (!form.location)      e.location = 'Location is required';
-    if (!form.warranty_date)   e.warranty_date = 'Warranty date is required';
+    if (!form.name.trim())      e.name = 'Name is required';
+    if (!form.category_id)    e.category_id = 'Category is required';
+    if (!form.location_id)    e.location_id = 'Location is required';
+    if (!form.warranty_date)  e.warranty_date = 'Warranty date is required';
     setErrors(e);
     return Object.keys(e).length === 0;
   }
 
   async function handleSave() {
-    alert('function called');
     if (!validate()) return;
     setSaving(true);
     try {
+      // We send IDs to the backend
+    const payload = {
+      ...form,
+      category_id: form.category_id,
+      location_id: form.location_id
+    };
       const result = isEdit
-        ? await assetsAPI.update(asset.id, form)
-        : await assetsAPI.create(form);
+        ? await assetsAPI.update(asset.id, payload)
+        : await assetsAPI.create(payload);
       onSave(result);
-    } catch {
-      console.log('some error occurred');// mock save
-      // onSave({ ...form, id: Date.now() });
+    } catch (err) {
+      console.error('Asset save failed:', err);
+      setErrors({ server: 'Failed to save asset to Supabase' });
     } finally {
       setSaving(false);
     }
   }
-   
 
   function set(field, value) {
     setForm(p => ({ ...p, [field]: value }));
@@ -110,25 +109,25 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Category *</label>
-            <select className={`form-select ${errors.category ? 'form-input--error' : ''}`}
-              value={form.category} onChange={e => set('category', e.target.value)}>
+            <select className={`form-select ${errors.category_id ? 'form-input--error' : ''}`}
+              value={form.category_id} onChange={e => set('category_id', e.target.value)}>
               <option value="">Select category…</option>
-              {/* {(categories.length ? categories : ['Cameras','Recording','Displays','Network','Tools']).map(c => (
-                <option key={c} value={typeof c === 'string' ? c : c.name}>{typeof c === 'string' ? c : c.name}</option>
-              ))} */}
+              {categories.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
             </select>
-            {errors.category && <span className="form-error">{errors.category}</span>}
+            {errors.category_id && <span className="form-error">{errors.category_id}</span>}
           </div>
           <div className="form-group">
             <label className="form-label">Location *</label>
-            <select className={`form-select ${errors.location ? 'form-input--error' : ''}`}
-              value={form.location} onChange={e => set('location', e.target.value)}>
+            <select className={`form-select ${errors.location_id ? 'form-input--error' : ''}`}
+              value={form.location_id} onChange={e => set('location_id', e.target.value)}>
               <option value="">Select location…</option>
-              {(locations.length ? locations : ['Warehouse A','Warehouse B','Site #8','Site #12','Service Center']).map(l => (
-                <option key={l} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>
+              {locations.map(l => (
+                <option key={l.id} value={l.id}>{l.name}</option>
               ))}
             </select>
-            {errors.location && <span className="form-error">{errors.location}</span>}
+            {errors.location_id && <span className="form-error">{errors.location_id}</span>}
           </div>
         </div>
 
@@ -180,8 +179,12 @@ function DeleteConfirm({ asset, onClose, onConfirm }) {
     setDeleting(true);
     try {
       await assetsAPI.delete(asset.id);
-    } catch { /* mock */ }
-    onConfirm(asset.id);
+      onConfirm(asset.id);
+    } catch (err) {
+      console.error("Delete failed:", err);
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -249,19 +252,16 @@ function AssetsPage() {
   const [locations,  setLocations]  = useState([]);
   const [loading,    setLoading]    = useState(false);
 
-  // UI state
   const [search,       setSearch]       = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCat,    setFilterCat]    = useState('all');
   const [showFilter,   setShowFilter]   = useState(false);
 
-  // Modal state
   const [addModal,    setAddModal]    = useState(false);
   const [editAsset,   setEditAsset]   = useState(null);
   const [viewAsset,   setViewAsset]   = useState(null);
   const [deleteAsset, setDeleteAsset] = useState(null);
 
-  // Load data
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -283,26 +283,27 @@ function AssetsPage() {
     load();
   }, []);
 
-  // Filter logic
-  // const filtered = assets.filter(a => {
-  //   const q = search.toLowerCase();
-  //   const matchSearch = !q ||
-  //     a.name?.toLowerCase().includes(q) ||
-  //     a.serial?.toLowerCase().includes(q) ||
-  //     a.asset_id?.toLowerCase().includes(q) ||
-  //     a.assigned_to?.toLowerCase().includes(q);
-  //   const matchStatus = filterStatus === 'all' || a.status === filterStatus;
-  //   const matchCat    = filterCat    === 'all' || a.category === filterCat;
-  //   return matchSearch && matchStatus && matchCat;
-  // });
-
-  // const allCategories = [...new Set(assets.map(a => a.category).filter(Boolean))];
-
-  // Handlers
-  function handleSaved(saved) {
+  // ─── COMPREHENSIVE SEARCH & FILTER LOGIC ───────────────────────
+  const filtered = assets.filter(a => {
+    const q = search.toLowerCase();
     
+    // Multi-field fuzzy search
+    const matchSearch = !q ||
+      a.name?.toLowerCase().includes(q) ||
+      a.serial?.toLowerCase().includes(q) ||
+      a.asset_id?.toLowerCase().includes(q) ||
+      a.category?.toLowerCase().includes(q) || // Searching by Category name
+      a.location?.toLowerCase().includes(q) || // Searching by Location name
+      a.assigned_to?.toLowerCase().includes(q);
+
+    const matchStatus = filterStatus === 'all' || a.status === filterStatus;
+    const matchCat    = filterCat    === 'all' || a.category === filterCat;
+
+    return matchSearch && matchStatus && matchCat;
+  });
+
+  function handleSaved(saved) {
     setAssets(prev => {
-      
       const exists = prev.find(a => a.id === saved.id);
       return exists ? prev.map(a => a.id === saved.id ? saved : a) : [saved, ...prev];
     });
@@ -328,41 +329,24 @@ function AssetsPage() {
       a.href = url; a.download = `gate-pass-${asset.asset_id}.pdf`; a.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert('Gate pass generation requires the backend to be running.');
+      alert('Error generating Gate Pass. Ensure backend PDF services are active.');
     }
   }
 
-  // function isWarrantyNear(date) {
-  //   if (!date) return false;
-  //   const diff = (new Date(date) - new Date()) / 86400000;
-  //   return diff >= 0 && diff <= 30;
-  // }
-
-  // 3. Scalable Filter (We map 'assets' directly now)
-  // Later, we will move 'search' to a backend query for 1000+ items
-  const displayAssets = assets.filter(a => 
-    a.name?.toLowerCase().includes(search.toLowerCase()) ||
-    a.asset_id?.toLowerCase().includes(search.toLowerCase())
-  );
-
   return (
     <div className="assets-page">
-      {/* ── Page header ──────────────────────────────────────────── */}
       <div className="page-header">
         <div>
           <h1 className="page-title">Assets</h1>
           <p className="page-subtitle">Manage serialized equipment and track chain of custody</p>
         </div>
         {can('asset_create') && (
-          <button className="btn btn--primary" onClick={() => {
-            alert('Add asset function called');
-            setAddModal(true)}}>
+          <button className="btn btn--primary" onClick={() => setAddModal(true)}>
             <Plus size={18} /> Add Asset
           </button>
         )}
       </div>
 
-      {/* ── Toolbar ──────────────────────────────────────────────── */}
       <div className="toolbar">
         <div className="search-box">
           <Search size={16} className="search-icon" />
@@ -401,7 +385,6 @@ function AssetsPage() {
                 onClick={() => { setFilterCat('all'); setShowFilter(false); }}>
                 All categories
               </button>
-              {/* Live Data mapping inside the original UI structure */}
               {categories.map(c => (
                 <button key={c.id}
                   className={`dropdown-item ${filterCat === c.name ? 'active' : ''}`}
@@ -413,7 +396,7 @@ function AssetsPage() {
           )}
         </div>
 
-        <span className="results-count">{displayAssets.length} of {assets.length}</span>
+        <span className="results-count">{filtered.length} of {assets.length}</span>
       </div>
 
       <div className="data-table-container">
@@ -423,10 +406,10 @@ function AssetsPage() {
               <div key={i} className="skeleton skeleton-row" />
             ))}
           </div>
-        ) : displayAssets.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="empty-state">
             <Search size={32} style={{ opacity: 0.2 }} />
-            <p>{search ? "No assets match your search" : "No real assets found in Supabase. Add your first one!"}</p>
+            <p>{search ? "No assets match your search criteria" : "No assets found in the system."}</p>
             {search && <button className="btn btn--secondary" onClick={() => setSearch('')}>Clear search</button>}
           </div>
         ) : (
@@ -445,7 +428,7 @@ function AssetsPage() {
               </tr>
             </thead>
             <tbody>
-              {displayAssets.map(asset => (
+              {filtered.map(asset => (
                 <tr key={asset.id}>
                   <td><span className="font-mono asset-id">{asset.asset_id}</span></td>
                   <td><span className="asset-name">{asset.name}</span></td>
@@ -497,11 +480,10 @@ function AssetsPage() {
         )}
       </div>
 
-      {/* ── Modals ───────────────────────────────────────────────── */}
       {addModal && (
         <AssetModal
           onClose={() => setAddModal(false)}
-          // onSave={handleSaved}
+          onSave={handleSaved}
           categories={categories}
           locations={locations}
         />

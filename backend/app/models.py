@@ -6,15 +6,17 @@ db = SQLAlchemy()
 flask_bcrypt = Bcrypt() # Use a distinct name like flask_bcrypt to avoid conflicts
 
 class Category(db.Model):
-    __tablename__ = 'categories'  # THIS IS THE MISSING LINK
+    __tablename__ = 'categories'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(50), unique=True, nullable=False)
-    icon = db.Column(db.String(50), default='Tag') # Added for UI
-    color = db.Column(db.String(20), default='primary') # Added for UI
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    icon = db.Column(db.String(50), default='Tag')
+    color = db.Column(db.String(20), default='primary')
+
+    # FIX: Use back_populates and point it to the 'category' attribute in Consumable
+    consumables = db.relationship('Consumable', back_populates='category', lazy=True)
     
-    # Relationships to get counts
-    assets = db.relationship('AssetItem', backref='category_rel', lazy=True)
-    # consumables = db.relationship('Consumable', backref='category_rel', lazy=True) # Add when Consumable has category_id
+    # We explicitly name the relationship 'asset_items' here
+    asset_items = db.relationship('AssetItem', back_populates='category', lazy=True)
 
     def to_dict(self):
         return {
@@ -22,21 +24,29 @@ class Category(db.Model):
             "name": self.name,
             "icon": self.icon,
             "color": self.color,
-            "assetCount": len(self.assets),
-            "consumableCount": 0 # Logic for consumables to be added later
+            "assetCount": len(self.assets) if self.assets else 0,
+            "consumableCount": len(self.consumables) if self.consumables else 0
         }
 
 class Location(db.Model):
-    __tablename__ = 'locations'  # THIS IS THE MISSING LINK
+    __tablename__ = 'locations'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), unique=True, nullable=False)
-    assets = db.relationship('AssetItem', backref='location_rel', lazy=True)
+    name = db.Column(db.String(100), nullable=False)
+    type = db.Column(db.String(50)) # e.g., Warehouse, Site, Office
+    address = db.Column(db.String(255)) # <--- ADD THIS
+
+    # Relationship to link back to assets/consumables
+    consumables = db.relationship('Consumable', back_populates='location', lazy=True)
+
+    # Explicitly link to AssetItem
+    asset_items = db.relationship('AssetItem', back_populates='location', lazy=True)
 
     def to_dict(self):
         return {
             "id": self.id,
-            "name": self.name,
-            "assetCount": len(self.assets)
+            "name": self.name or "Unnamed Location",
+            "type": self.type or "Unspecified",
+            "address": self.address or "No address provided"
         }
 
 class AssetItem(db.Model):
@@ -59,6 +69,12 @@ class AssetItem(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
 
+    # Relationships
+    # Use back_populates and point it to the relationship name in Category
+    category = db.relationship('Category', back_populates='asset_items')
+    # For Location, we'll use a unique backref name to avoid collisions
+    location = db.relationship('Location', back_populates='asset_items')
+
     def to_dict(self):
         """Converts the database object into a dictionary for JSON output"""
         return {
@@ -66,46 +82,41 @@ class AssetItem(db.Model):
             "asset_id": self.asset_id,
             "name": self.name,
             "serial": self.serial,
-            "category": self.category.name if self.category else "Unassigned",
-            "location": self.location.name if self.location else "Unassigned",
             "status": self.status,
             "assigned_to": self.assigned_to,
             "ip_address": self.ip_address,
             "mac_address": self.mac_address,
-            "warranty_date": self.warranty_date.isoformat() if self.warranty_date else None
+            "warranty_date": self.warranty_date.strftime('%Y-%m-%d') if self.warranty_date else None,
+            "category_id": self.category_id,
+            "location_id": self.location_id,
+            "category": self.category.name if self.category else "Uncategorized",
+            "location": self.location.name if self.location else "Main Store"
         }
 
 class Consumable(db.Model):
     __tablename__ = 'consumables'
-    
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False, unique=True)
     sku = db.Column(db.String(50), unique=True)
     quantity = db.Column(db.Integer, default=0, nullable=False)
     min_threshold = db.Column(db.Integer, default=5)
-
-    # Relationships (Make sure these match your Category/Location backrefs)
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
-
-    # Optional: Track when it was last updated
     updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
 
+    # FIX: Use back_populates and point it to the 'consumables' attribute in Category
+    category = db.relationship('Category', back_populates='consumables')
+    location = db.relationship('Location', backref='consumables_list')
+
     def to_dict(self):
-        """
-        Excellent necessary use case: 
-        Convert the SQLAlchemy object into a dictionary for JSON responses.
-        """
         return {
             "id": self.id,
             "name": self.name,
             "sku": self.sku,
             "quantity": self.quantity,
-            "minStock": self.min_threshold, # Maps DB 'min_threshold' to UI 'minStock'
-            # "min_threshold": self.min_threshold, # Keep this for internal use and future-proofing
-            
-            # Production feature: Flag low stock directly from the backend
+            "min_threshold": self.min_threshold,
             "is_low_stock": self.quantity <= self.min_threshold,
+            # This 'self.category' now works perfectly with the relationship above
             "category": self.category.name if self.category else "General",
             "location": self.location.name if self.location else "Main Store",
             "last_updated": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None
@@ -113,13 +124,21 @@ class Consumable(db.Model):
 
 class User(db.Model):
     __tablename__ = 'users'  # THIS IS THE MISSING LINK
-   id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     # CHECK THIS LINE: It must be 'email', not 'username'
     email = db.Column(db.String(120), unique=True, nullable=False) 
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), default='end-user')
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "email": self.email,
+            "role": self.role
+        } 
 
     def set_password(self, password):
         # Use the renamed instance here

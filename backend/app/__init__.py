@@ -3,7 +3,10 @@ import re
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from .models import db, flask_bcrypt 
+from dotenv import load_dotenv  # <--- ADD THIS
 
 def create_app():
     app = Flask(__name__)
