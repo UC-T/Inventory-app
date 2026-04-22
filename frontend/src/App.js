@@ -7,6 +7,7 @@ import Header         from './components/Header';
 import Dashboard      from './components/Dashboard';
 import AssetsPage     from './components/AssetsPage';
 import ConsumablesPage from './components/ConsumablesPage';
+import SuppliersPage  from './components/SuppliersPage';
 import LocationsPage  from './components/LocationsPage';
 import CategoriesPage from './components/CategoriesPage';
 import ActivityPage   from './components/ActivityPage';
@@ -50,6 +51,7 @@ function AppLayout() {
             <Route path="/"            element={<Dashboard />} />
             <Route path="/assets"      element={<AssetsPage />} />
             <Route path="/consumables" element={<ConsumablesPage />} />
+            <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/locations"   element={
               <RoleRoute permission="location_manage"><LocationsPage /></RoleRoute>
             } />

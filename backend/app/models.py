@@ -5,6 +5,17 @@ from flask_bcrypt import Bcrypt
 db = SQLAlchemy()
 flask_bcrypt = Bcrypt() # Use a distinct name like flask_bcrypt to avoid conflicts
 
+class Supplier(db.Model):
+    __tablename__ = 'suppliers'
+    # Using name as unique ID per your request
+    name = db.Column(db.String(100), primary_key=True) 
+    contact_person = db.Column(db.String(100))
+    email = db.Column(db.String(100))
+    phone = db.Column(db.String(20))
+
+    def to_dict(self):
+        return {"name": self.name, "contact_person": self.contact_person or "", "email": self.email or "", "phone": self.phone or ""}
+
 class Category(db.Model):
     __tablename__ = 'categories'
     id = db.Column(db.Integer, primary_key=True)
@@ -24,7 +35,7 @@ class Category(db.Model):
             "name": self.name,
             "icon": self.icon,
             "color": self.color,
-            "assetCount": len(self.assets) if self.assets else 0,
+            "assetCount": len(self.asset_items) if self.asset_items else 0,
             "consumableCount": len(self.consumables) if self.consumables else 0
         }
 
@@ -36,7 +47,7 @@ class Location(db.Model):
     address = db.Column(db.String(255)) # <--- ADD THIS
 
     # Relationship to link back to assets/consumables
-    consumables = db.relationship('Consumable', back_populates='location', lazy=True)
+    consumables = db.relationship('Consumable', back_populates='location', lazy=True, overlaps="consumables")
 
     # Explicitly link to AssetItem
     asset_items = db.relationship('AssetItem', back_populates='location', lazy=True)
@@ -69,11 +80,18 @@ class AssetItem(db.Model):
     category_id = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True)
     location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
 
+    # ─── UPDATING EXISTING MODELS ─────────────────────────────────────
+    # Add this column to both AssetItem and Consumable classes
+    supplier_name = db.Column(db.String(100), db.ForeignKey('suppliers.name'), nullable=True)
+
     # Relationships
     # Use back_populates and point it to the relationship name in Category
     category = db.relationship('Category', back_populates='asset_items')
     # For Location, we'll use a unique backref name to avoid collisions
     location = db.relationship('Location', back_populates='asset_items')
+
+    # Relationship to get the supplier object
+    supplier = db.relationship('Supplier', backref='assets')
 
     def to_dict(self):
         """Converts the database object into a dictionary for JSON output"""
@@ -90,7 +108,10 @@ class AssetItem(db.Model):
             "category_id": self.category_id,
             "location_id": self.location_id,
             "category": self.category.name if self.category else "Uncategorized",
-            "location": self.location.name if self.location else "Main Store"
+            "location": self.location.name if self.location else "Main Store",
+            "supplier": self.supplier.to_dict() if self.supplier else {"name": "Not Assigned"},
+            # Keep this for the Edit Modal dropdowns
+            "supplier_name": self.supplier_name or "Legacy / Unknown"
         }
 
 class Consumable(db.Model):
@@ -104,9 +125,16 @@ class Consumable(db.Model):
     location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
     updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
 
+    # ─── UPDATING EXISTING MODELS ─────────────────────────────────────
+    # Add this column to both AssetItem and Consumable classes
+    supplier_name = db.Column(db.String(100), db.ForeignKey('suppliers.name'), nullable=True)
+
     # FIX: Use back_populates and point it to the 'consumables' attribute in Category
     category = db.relationship('Category', back_populates='consumables')
     location = db.relationship('Location', backref='consumables_list')
+
+    # Relationship to get the supplier object
+    supplier = db.relationship('Supplier', backref='consumables')
 
     def to_dict(self):
         return {
@@ -119,7 +147,24 @@ class Consumable(db.Model):
             # This 'self.category' now works perfectly with the relationship above
             "category": self.category.name if self.category else "General",
             "location": self.location.name if self.location else "Main Store",
+            "supplier": self.supplier.to_dict() if self.supplier else {"name": "Not Assigned"},
+            "supplier_name": self.supplier_name or "Legacy / Unknown",
             "last_updated": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None
+        }
+
+class MasterItem(db.Model):
+    __tablename__ = 'master_items'
+    id = db.Column(db.Integer, primary_key=True)
+    item_name = db.Column(db.String(100), unique=True, nullable=False)
+    item_type = db.Column(db.String(20)) # 'Asset' or 'Consumable'
+    last_added = db.Column(db.DateTime, default=db.func.now())
+
+    def to_dict(self):
+        return {
+            "id": self.id, 
+            "item_name": self.item_name, 
+            "item_type": self.item_type,
+            "last_added": self.last_updated.strftime("%Y-%m-%d")
         }
 
 class User(db.Model):

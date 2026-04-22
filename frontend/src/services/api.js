@@ -110,4 +110,27 @@ export const dashboardAPI = {
   getAlerts: () => api.get('/dashboard/alerts'),
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// SUPPLIERS & MASTER SHEET
+// ═══════════════════════════════════════════════════════════════════
+export const suppliersAPI = {
+  getAll: async () => {
+    try {
+      const response = await api.get('/suppliers');
+      // If you only console.log and don't RETURN, the UI gets 'undefined'
+      return response; 
+    } catch (error) {
+      console.error("API Error:", error);
+      return []; // Return empty array on error to prevent UI crash
+    }
+  },
+  create: (data) => api.post('/suppliers', data).then(res => res.data),
+  update: (name, data) => api.put(`/suppliers/${name}`, data).then(res => res.data),
+  delete: (name) => api.delete(`/suppliers/${name}`).then(res => res.data),
+};
+
+export const adminAPI = {
+  getMasterSheet: () => api.get('/admin/master-sheet').then(res => res.data),
+};
+
 export default api;

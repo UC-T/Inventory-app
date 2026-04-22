@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Package, Boxes, MapPin, Tags,
   Activity, Settings, ChevronLeft, ChevronRight,
-  Radio, LogOut, User, HelpCircle, Shield
+  Radio, LogOut, User, HelpCircle, Shield, Users
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import '../styling/SideBar.css';
@@ -23,6 +23,7 @@ function SideBar({ collapsed, onToggle }) {
     { name: 'Dashboard',    path: '/',            icon: LayoutDashboard, permission: null },
     { name: 'Assets',       path: '/assets',      icon: Package,         permission: 'asset_view' },
     { name: 'Consumables',  path: '/consumables', icon: Boxes,           permission: 'consumable_view' },
+    { name: 'Suppliers',    path: '/suppliers',   icon: Users,           permission: 'supplier_view' },
     { name: 'Locations',    path: '/locations',   icon: MapPin,          permission: 'location_manage' },
     { name: 'Categories',   path: '/categories',  icon: Tags,            permission: 'category_manage' },
   ].filter(item => !item.permission || can(item.permission));

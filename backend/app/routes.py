@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request, Blueprint  # <--- Ensure Blueprint is here # 1. Imports first
 # from .models import db, AssetItem
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
-from .models import db, AssetItem, User, flask_bcrypt, Category, Location, Consumable, AuditLog
+from .models import db, AssetItem, User, flask_bcrypt, Category, Location, Consumable, AuditLog, Supplier, MasterItem # <--- Import all your models here
 from functools import wraps
 from flask_jwt_extended import get_jwt_identity
 import pandas as pd
@@ -27,6 +27,16 @@ def admin_required(fn):
             return jsonify({"message": "Admins only! Access denied."}), 403
     return wrapper
 
+def update_master_sheet(name, item_type):
+    """Adds a unique item name to the Master Sheet if it doesn't exist."""
+    from .models import MasterItem
+    existing = MasterItem.query.filter_by(item_name=name).first()
+    if not existing:
+        new_master = MasterItem(item_name=name, item_type=type)
+        db.session.add(new_master)
+    else:
+        existing.last_added = db.func.now()
+
 # 5. Routes (Always go AFTER app is defined)
 @api.route('/assets', methods=['GET'])
 @jwt_required()
@@ -38,10 +48,15 @@ def get_inventory():
 @jwt_required()
 def add_item():
     data = request.json
+    # Validation
+    if not data.get('supplier_name'):
+        return jsonify({"error": "Supplier is mandatory"}), 400
+
     try:
         new_item = AssetItem(
             name=data.get('name'),
             asset_id=data.get('asset_id'),
+            supplier_name=data['supplier_name'],
             serial=data.get('serial'),
             status=data.get('status', 'available'),
             assigned_to=data.get('assigned_to'),
@@ -57,7 +72,7 @@ def add_item():
             # Convert string date to Python date object
             warranty_date=datetime.strptime(data['warranty_date'], '%Y-%m-%d').date() if data.get('warranty_date') else None
         )
-        
+        update_master_sheet(data['name'], 'Asset')
         db.session.add(new_item)
         
         # 2. Flush to get the ID for the audit log
@@ -77,20 +92,32 @@ def add_item():
 # ROUTE: Update an item's quantity or price
 @api.route('/assets/<int:item_id>', methods=['PUT'])
 @jwt_required()
-def update_item(item_id):
+def update_asset_item(item_id): # Renamed to be safe
     item = AssetItem.query.get_or_404(item_id)
     data = request.get_json()
 
-    # Update only the fields provided in the request
-    if 'quantity' in data:
-        item.quantity = data['quantity']
-    if 'price' in data:
-        item.price = data['price']
-    if 'name' in data:
-        item.name = data['name']
+    try:
+        # 1. Update Core Fields
+        if 'name' in data: item.name = data['name']
+        if 'asset_id' in data: item.asset_id = data['asset_id']
+        if 'serial' in data: item.serial = data['serial']
+        if 'status' in data: item.status = data['status']
+        if 'assigned_to' in data: item.assigned_to = data['assigned_to']
+        
+        # 2. Update Relationships (IDs)
+        if 'category_id' in data: item.category_id = data['category_id']
+        if 'location_id' in data: item.location_id = data['location_id']
 
-    db.session.commit()
-    return jsonify({"message": "Item updated!", "item": item.to_dict()})
+        # 3. Handle the Date object
+        if 'warranty_date' in data and data['warranty_date']:
+            item.warranty_date = datetime.strptime(data['warranty_date'], '%Y-%m-%d').date()
+
+        db.session.commit()
+        return jsonify(item.to_dict()), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 # ROUTE: Delete an item
 @api.route('/assets/<int:item_id>', methods=['DELETE'])
@@ -403,7 +430,7 @@ def handle_consumables():
 
         # Validation: Standardizing keys
         # We now accept 'min_threshold' directly from the frontend
-        required = ['name', 'sku', 'quantity']
+        required = ['name', 'sku', 'supplier_name', 'quantity']
         if not data or not all(k in data for k in required):
             return jsonify({"error": "Missing required fields", "required": required}), 400
 
@@ -416,12 +443,13 @@ def handle_consumables():
             new_con = Consumable(
                 name=data['name'].strip(),
                 sku=data['sku'].strip().upper(),
+                supplier_name=data['supplier_name'].strip(),
                 quantity=qty,
                 min_threshold=threshold,
                 category_id=data.get('category_id'),
                 location_id=data.get('location_id')
             )
-
+            update_master_sheet(data['name'], 'Consumable')
             db.session.add(new_con)
             
             # Audit Trail
@@ -499,6 +527,82 @@ def update_consumable(con_id):
         db.session.rollback()
         return jsonify({"error": "Update failed", "details": str(e)}), 500
 
+# ─── UPDATE ENTIRE ITEM ──────────────────────────────
+@api.route('/consumables/<int:con_id>', methods=['PUT'])
+@jwt_required()
+def edit_consumable_details(con_id): # <--- NAME CHANGED TO PREVENT CRASH
+    # 1. Find the item or return 404
+    item = Consumable.query.get_or_404(con_id)
+    data = request.get_json()
+
+    try:
+        # 2. Update basic fields if they are in the request
+        if 'name' in data: 
+            item.name = data['name'].strip()
+        if 'sku' in data: 
+            item.sku = data['sku'].strip().upper()
+        if 'quantity' in data: 
+            item.quantity = int(data['quantity'])
+        
+        # 3. Use the standardized threshold name
+        if 'min_threshold' in data or 'minStock' in data:
+            item.min_threshold = int(data.get('min_threshold', data.get('minStock')))
+
+        # 4. THE FIX: Update Category and Location IDs
+        # This allows you to change their "home" at will
+        if 'category_id' in data: 
+            item.category_id = data['category_id']
+        if 'location_id' in data: 
+            item.location_id = data['location_id']
+
+        db.session.commit()
+        
+        # 5. Return the updated object (including the new names via to_dict)
+        return jsonify(item.to_dict()), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Update failed", "details": str(e)}), 500
+
+# ─── SUPPLIER ROUTES ──────────────────────────────────────────────
+@api.route('/suppliers', methods=['GET', 'POST'])
+@jwt_required()
+def handle_suppliers():
+    if request.method == 'GET':
+        suppliers = Supplier.query.all()
+        return jsonify([s.to_dict() for s in Supplier.query.all()])
+    
+    if request.method == 'POST':
+        data = request.get_json()
+        if not data.get('name'):
+            return jsonify({"error": "Supplier name is required"}), 400
+            
+        if Supplier.query.get(data['name']):
+            return jsonify({"error": "Supplier already exists"}), 400
+
+        new_sup = Supplier(
+            name=data['name'],
+            contact_person=data.get('contact_person'),
+            email=data.get('email'),
+            phone=data.get('phone')
+        )
+        db.session.add(new_sup)
+        db.session.commit()
+        return jsonify(new_sup.to_dict()), 201
+
+@api.route('/suppliers/<string:name>', methods=['DELETE'])
+@jwt_required()
+def delete_supplier(name):
+    sup = Supplier.query.get_or_404(name)
+    # Check for linked items before deleting
+    asset_count = AssetItem.query.filter_by(supplier_name=name).count()
+    if asset_count > 0:
+        return jsonify({"error": "Cannot delete supplier with linked assets"}), 400
+        
+    db.session.delete(sup)
+    db.session.commit()
+    return jsonify({"message": "Supplier deleted"}), 200
+
 @api.route('/report/monthly', methods=['GET'])
 @jwt_required()
 @admin_required # Reports are usually for admins
@@ -537,6 +641,21 @@ def download_monthly_report():
         as_attachment=True,
         download_name='Monthly_Inventory_Report.xlsx'
     )
+
+# ─── MASTER SHEET (ADMIN ONLY) ────────────────────────────────────
+@api.route('/admin/master-sheet', methods=['GET'])
+@jwt_required()
+@admin_required  # This decorator should already block non-admins
+def get_master_sheet():
+    try:
+        # Fetch all unique items registered in the Master Sheet
+        items = MasterItem.query.order_by(MasterItem.item_name.asc()).all()
+        
+        # If the list is empty, return an empty array with a 200 (not an error)
+        return jsonify([i.to_dict() for i in items]), 200
+        
+    except Exception as e:
+        return jsonify({"error": "Could not fetch Master Sheet", "details": str(e)}), 500
 
 # --- ROUTE TO SETUP DUMMY DATA (For Testing) ---
 

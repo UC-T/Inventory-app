@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, Filter, QrCode, Edit, Trash2, Eye, X, Download, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { assetsAPI, categoriesAPI, locationsAPI } from '../services/api';
+// Added suppliersAPI to the imports
+import { assetsAPI, categoriesAPI, locationsAPI, suppliersAPI } from '../services/api';
 import '../styling/AssetsPage.css';
 
 const STATUS_CONFIG = {
@@ -11,20 +12,22 @@ const STATUS_CONFIG = {
   'retired':     { label: 'Retired',     className: 'status--retired' },
 };
 
+// Updated EMPTY_FORM to include supplier_name
 const EMPTY_FORM = {
   name: '', asset_id: '', serial: '', category_id: '',
-  location_id: '', status: 'available', assigned_to: '',
-  ip_address: '', mac_address: '', warranty_date: '',
+  location_id: '', supplier_name: '', status: 'available', 
+  assigned_to: '', ip_address: '', mac_address: '', warranty_date: '',
 };
 
 // ─── Sub-components ───────────────────────────────────────────────
 
-function AssetModal({ asset, onClose, onSave, categories, locations }) {
+function AssetModal({ asset, onClose, onSave, categories, locations, suppliers }) {
   const isEdit = !!asset;
   const [form, setForm] = useState(asset ? {
     ...asset,
     category_id: asset.category_id || '',
-    location_id: asset.location_id || ''
+    location_id: asset.location_id || '',
+    supplier_name: asset.supplier_name || ''
   } : { ...EMPTY_FORM });
   
   const [saving, setSaving] = useState(false);
@@ -35,6 +38,7 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
     if (!form.name.trim())      e.name = 'Name is required';
     if (!form.category_id)    e.category_id = 'Category is required';
     if (!form.location_id)    e.location_id = 'Location is required';
+    if (!form.supplier_name)  e.supplier_name = 'Supplier is required'; // Mandatory Check
     if (!form.warranty_date)  e.warranty_date = 'Warranty date is required';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -44,15 +48,9 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
     if (!validate()) return;
     setSaving(true);
     try {
-      // We send IDs to the backend
-    const payload = {
-      ...form,
-      category_id: form.category_id,
-      location_id: form.location_id
-    };
       const result = isEdit
-        ? await assetsAPI.update(asset.id, payload)
-        : await assetsAPI.create(payload);
+        ? await assetsAPI.update(asset.id, form)
+        : await assetsAPI.create(form);
       onSave(result);
     } catch (err) {
       console.error('Asset save failed:', err);
@@ -100,9 +98,11 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
             {errors.serial && <span className="form-error">{errors.serial}</span>}
           </div>
           <div className="form-group">
-            <label className="form-label">Warranty Date</label>
-            <input type="date" className="form-input" value={form.warranty_date}
+            <label className="form-label">Warranty Date *</label>
+            <input type="date" className={`form-input ${errors.warranty_date ? 'form-input--error' : ''}`} 
+              value={form.warranty_date}
               onChange={e => set('warranty_date', e.target.value)} />
+            {errors.warranty_date && <span className="form-error">{errors.warranty_date}</span>}
           </div>
         </div>
 
@@ -133,6 +133,17 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
 
         <div className="form-row">
           <div className="form-group">
+            <label className="form-label">Supplier *</label>
+            <select className={`form-select ${errors.supplier_name ? 'form-input--error' : ''}`}
+              value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)}>
+              <option value="">Select supplier…</option>
+              {(suppliers || []).map(s => (
+                <option key={s.name} value={s.name}>{s.name}</option>
+              ))}
+            </select>
+            {errors.supplier_name && <span className="form-error">{errors.supplier_name}</span>}
+          </div>
+          <div className="form-group">
             <label className="form-label">Status</label>
             <select className="form-select" value={form.status} onChange={e => set('status', e.target.value)}>
               {Object.entries(STATUS_CONFIG).map(([v, { label }]) => (
@@ -140,11 +151,15 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="form-row">
           <div className="form-group">
             <label className="form-label">Assigned To</label>
             <input className="form-input" placeholder="Person name"
               value={form.assigned_to || ''} onChange={e => set('assigned_to', e.target.value)} />
           </div>
+          <div className="form-group" /> {/* Spacer */}
         </div>
 
         <div className="modal-section-label">Technical Metadata</div>
@@ -172,9 +187,9 @@ function AssetModal({ asset, onClose, onSave, categories, locations }) {
   );
 }
 
+// DeleteConfirm and ViewModal remain unchanged...
 function DeleteConfirm({ asset, onClose, onConfirm }) {
   const [deleting, setDeleting] = useState(false);
-
   async function handleDelete() {
     setDeleting(true);
     try {
@@ -186,7 +201,6 @@ function DeleteConfirm({ asset, onClose, onConfirm }) {
       setDeleting(false);
     }
   }
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal--sm" onClick={e => e.stopPropagation()}>
@@ -223,6 +237,7 @@ function ViewModal({ asset, onClose }) {
             ['Serial',      asset.serial],
             ['Category',    asset.category],
             ['Location',    asset.location],
+            ['Supplier',    asset.supplier_name],
             ['Status',      asset.status],
             ['Assigned To', asset.assigned_to || '—'],
             ['IP Address',  asset.ip_address  || '—'],
@@ -250,6 +265,7 @@ function AssetsPage() {
   const [assets,     setAssets]     = useState([]);
   const [categories, setCategories] = useState([]);
   const [locations,  setLocations]  = useState([]);
+  const [suppliers,  setSuppliers]  = useState([]); // Added Supplier state
   const [loading,    setLoading]    = useState(false);
 
   const [search,       setSearch]       = useState('');
@@ -266,14 +282,16 @@ function AssetsPage() {
     async function load() {
       setLoading(true);
       try {
-        const [a, c, l] = await Promise.all([
+        const [a, c, l, s] = await Promise.all([
           assetsAPI.getAll(),
           categoriesAPI.getAll(),
           locationsAPI.getAll(),
+          suppliersAPI.getAll(), // Added Supplier fetch
         ]);
-        setAssets(a);
-        setCategories(c);
-        setLocations(l);
+        setAssets(a || []);
+        setCategories(c || []);
+        setLocations(l || []);
+        setSuppliers(s || []);  
       } catch (err){
         console.error("Failed to fetch data:", err);
       } finally {
@@ -283,17 +301,15 @@ function AssetsPage() {
     load();
   }, []);
 
-  // ─── COMPREHENSIVE SEARCH & FILTER LOGIC ───────────────────────
   const filtered = assets.filter(a => {
     const q = search.toLowerCase();
-    
-    // Multi-field fuzzy search
     const matchSearch = !q ||
       a.name?.toLowerCase().includes(q) ||
       a.serial?.toLowerCase().includes(q) ||
       a.asset_id?.toLowerCase().includes(q) ||
-      a.category?.toLowerCase().includes(q) || // Searching by Category name
-      a.location?.toLowerCase().includes(q) || // Searching by Location name
+      a.supplier_name?.toLowerCase().includes(q) || // Search by supplier
+      a.category?.toLowerCase().includes(q) ||
+      a.location?.toLowerCase().includes(q) ||
       a.assigned_to?.toLowerCase().includes(q);
 
     const matchStatus = filterStatus === 'all' || a.status === filterStatus;
@@ -329,7 +345,7 @@ function AssetsPage() {
       a.href = url; a.download = `gate-pass-${asset.asset_id}.pdf`; a.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert('Error generating Gate Pass. Ensure backend PDF services are active.');
+      alert('Error generating Gate Pass.');
     }
   }
 
@@ -352,7 +368,7 @@ function AssetsPage() {
           <Search size={16} className="search-icon" />
           <input
             type="text"
-            placeholder="Search by name, serial, ID, or person…"
+            placeholder="Search by name, serial, ID, or supplier…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
@@ -410,7 +426,6 @@ function AssetsPage() {
           <div className="empty-state">
             <Search size={32} style={{ opacity: 0.2 }} />
             <p>{search ? "No assets match your search criteria" : "No assets found in the system."}</p>
-            {search && <button className="btn btn--secondary" onClick={() => setSearch('')}>Clear search</button>}
           </div>
         ) : (
           <table className="data-table">
@@ -419,11 +434,10 @@ function AssetsPage() {
                 <th>Asset ID</th>
                 <th>Name</th>
                 <th>Category</th>
-                <th>Serial Number</th>
+                <th>Supplier</th>
                 <th>Status</th>
                 <th>Location</th>
                 <th>Assigned To</th>
-                <th>Warranty</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -433,7 +447,7 @@ function AssetsPage() {
                   <td><span className="font-mono asset-id">{asset.asset_id}</span></td>
                   <td><span className="asset-name">{asset.name}</span></td>
                   <td>{asset.category}</td>
-                  <td><span className="font-mono" style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{asset.serial}</span></td>
+                  <td>{asset.supplier?.name || 'N/A'}</td>
                   <td>
                     <span className={`status-badge ${STATUS_CONFIG[asset.status]?.className || ''}`}>
                       {STATUS_CONFIG[asset.status]?.label || asset.status}
@@ -442,17 +456,12 @@ function AssetsPage() {
                   <td style={{ color: 'var(--color-text-secondary)' }}>{asset.location}</td>
                   <td style={{ color: 'var(--color-text-secondary)' }}>{asset.assigned_to || '—'}</td>
                   <td>
-                    <span className="warranty-ok">
-                      {asset.warranty_date || '—'}
-                    </span>
-                  </td>
-                  <td>
                     <div className="action-buttons">
                       <button className="icon-btn" title="View details" onClick={() => setViewAsset(asset)}>
                         <Eye size={15} />
                       </button>
                       {can('asset_qr') && (
-                        <button className="icon-btn" title="Download QR code" onClick={() => handleQR(asset)}>
+                        <button className="icon-btn" title="Download QR" onClick={() => handleQR(asset)}>
                           <QrCode size={15} />
                         </button>
                       )}
@@ -486,6 +495,7 @@ function AssetsPage() {
           onSave={handleSaved}
           categories={categories}
           locations={locations}
+          suppliers={suppliers}
         />
       )}
       {editAsset && (
@@ -495,6 +505,7 @@ function AssetsPage() {
           onSave={handleSaved}
           categories={categories}
           locations={locations}
+          suppliers={suppliers}
         />
       )}
       {viewAsset && (
