@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // ─── Base Configuration ───────────────────────────────────────────
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://inventory-app-flame-delta.vercel.app/api' // REPLACE with your actual Vercel URL
+  ? 'https://inventory-app-uc-ts-projects.vercel.app/api' // REPLACE with your actual Vercel URL
   : 'http://localhost:5000/api';
 
 const api = axios.create({
