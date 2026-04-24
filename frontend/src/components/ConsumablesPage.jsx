@@ -1,27 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Search, AlertTriangle, Package, X, ArrowDown, ArrowUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { consumablesAPI } from '../services/api';
+import { consumablesAPI, categoriesAPI, locationsAPI, suppliersAPI } from '../services/api';
 import '../styling/ConsumablesPage.css';
 
-const MOCK_CONSUMABLES = [
-  { id: 1, name: 'RG-6 Coax Cable (1000ft)', sku: 'CBL-RG6-1K',   quantity: 2,  minStock: 5,  category: 'Cables',      location: 'Warehouse A' },
-  { id: 2, name: 'BNC Connectors (100pk)',   sku: 'CON-BNC-100',  quantity: 45, minStock: 20, category: 'Connectors',  location: 'Warehouse A' },
-  { id: 3, name: 'Cat6 Cable (500ft)',        sku: 'CBL-CAT6-500', quantity: 8,  minStock: 10, category: 'Cables',      location: 'Warehouse B' },
-  { id: 4, name: 'Power Supply 12V 2A',       sku: 'PWR-12V-2A',   quantity: 32, minStock: 15, category: 'Power',       location: 'Warehouse A' },
-  { id: 5, name: 'Mounting Brackets',         sku: 'MNT-BRK-UNI', quantity: 78, minStock: 25, category: 'Hardware',    location: 'Warehouse A' },
-  { id: 6, name: 'Weatherproof Junction Box', sku: 'BOX-WP-SM',   quantity: 12, minStock: 20, category: 'Enclosures',  location: 'Warehouse B' },
-];
-
-function getStockStatus(quantity, minStock) {
-  if (quantity <= 0)         return { label: 'Out of Stock', cls: 'stock--out' };
-  if (quantity < minStock)   return { label: 'Low Stock',    cls: 'stock--low' };
-  if (quantity < minStock*1.5) return { label: 'Medium',     cls: 'stock--medium' };
-  return                            { label: 'In Stock',     cls: 'stock--ok' };
-}
-
-function getStockPct(qty, min) {
-  return Math.min(100, Math.round((qty / (min * 2)) * 100));
+// ─── UTILS ────────────────────────────────────────────────────────
+function getStockStatus(quantity, min_threshold) {
+  if (quantity <= 0)           return { label: 'Out of Stock', cls: 'stock--out' };
+  if (quantity < min_threshold)   return { label: 'Low Stock',     cls: 'stock--low' };
+  if (quantity < min_threshold * 1.5) return { label: 'Medium',      cls: 'stock--medium' };
+  return                            { label: 'In Stock',      cls: 'stock--ok' };
 }
 
 // ─── Stock-In Modal ───────────────────────────────────────────────
@@ -36,10 +24,19 @@ function StockInModal({ item, onClose, onSave }) {
     if (!n || n <= 0) { setErr('Enter a valid quantity greater than 0'); return; }
     setSaving(true);
     try {
-      await consumablesAPI.stockIn(item.id, { quantity: n, reason });
-    } catch { /* mock */ }
-    onSave(item.id, n, 'in', reason);
-    setSaving(false);
+      const updatedItem = await consumablesAPI.stockIn(item.id, { quantity: n, reason });
+    
+      // Check if updatedItem actually exists before calling onSave
+      if (updatedItem) {
+        onSave(updatedItem); 
+      } else {
+        throw new Error("Empty response from server");
+      }
+    } catch (error) {
+      setErr('Failed to update stock in Supabase');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -89,10 +86,19 @@ function IssueModal({ item, onClose, onSave }) {
     if (n > item.quantity){ setErr(`Cannot issue more than current stock (${item.quantity})`); return; }
     setSaving(true);
     try {
-      await consumablesAPI.issue(item.id, { quantity: n, reason, issued_to: issueTo });
-    } catch { /* mock */ }
-    onSave(item.id, n, 'out', reason);
-    setSaving(false);
+      const updatedItem = await consumablesAPI.issue(item.id, { quantity: n, reason, issued_to: issueTo });
+    
+      // Check if updatedItem actually exists before calling onSave
+      if (updatedItem) {
+        onSave(updatedItem); 
+      } else {
+        throw new Error("Empty response from server");
+      }
+    } catch (error) {
+      setErr('Failed to issue stock from Supabase');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -136,9 +142,34 @@ function IssueModal({ item, onClose, onSave }) {
 }
 
 // ─── Add / Edit Consumable Modal ──────────────────────────────────
-function ConsumableModal({ item, onClose, onSave }) {
+function ConsumableModal({ item, categories, locations, suppliers, onClose, onSave }) {
   const isEdit = !!item;
-  const [form, setForm] = useState(item || { name:'', sku:'', quantity:0, minStock:10, category:'', location:'' });
+
+  const [form, setForm] = useState(() => {
+    if (!item) return { name:'', sku:'', quantity:0, min_threshold:10, category_id:'', location_id:'', supplier_name:'' };
+    
+    // EXTRACTION LOGIC: ensure we get the ID whether it's flat or nested
+    let catId = item.category_id || '';
+    if (!catId && item.category) {
+      const match = categories.find(c => c.name === item.category);
+      if (match) catId = match.id;
+    }
+
+    // 2. Find Location ID by matching the name if location_id is missing
+    let locId = item.location_id || '';
+    if (!locId && item.location) {
+      const match = locations.find(l => l.name === item.location);
+      if (match) locId = match.id;
+    }
+
+    return {
+      ...item,
+      category_id: catId ? String(catId) : '',
+      location_id: locId ? String(locId) : '',
+      supplier_name: item.supplier_name || item.supplier?.name || 'Unassigned'
+    };
+  });
+  
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
 
@@ -146,6 +177,7 @@ function ConsumableModal({ item, onClose, onSave }) {
     const e = {};
     if (!form.name.trim()) e.name = 'Name is required';
     if (!form.sku.trim())  e.sku  = 'SKU is required';
+    if (!form.supplier_name) e.supplier_name = 'Supplier is mandatory';
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -154,12 +186,21 @@ function ConsumableModal({ item, onClose, onSave }) {
     if (!validate()) return;
     setSaving(true);
     try {
+      const payload = {
+        ...form,
+        // Ensure numeric types for Supabase/Postgres
+        quantity: parseInt(form.quantity) || 0,
+        min_threshold: parseInt(form.min_threshold) || 10,
+        // Send IDs as integers if your backend expects them that way
+        category_id: form.category_id ? parseInt(form.category_id) : null,
+        location_id: form.location_id ? parseInt(form.location_id) : null
+      };
       const result = isEdit
-        ? await consumablesAPI.update(item.id, form)
-        : await consumablesAPI.create(form);
+        ? await consumablesAPI.update(item.id, payload)
+        : await consumablesAPI.create(payload);
       onSave(result);
-    } catch {
-      onSave({ ...form, id: Date.now() });
+    } catch (err) {
+      setErrors({ server: "Failed to sync with Supabase" });
     } finally {
       setSaving(false);
     }
@@ -194,38 +235,65 @@ function ConsumableModal({ item, onClose, onSave }) {
             {errors.sku && <span className="form-error">{errors.sku}</span>}
           </div>
         </div>
+
         <div className="form-row">
           <div className="form-group">
-            <label className="form-label">Initial Quantity</label>
-            <input type="number" min="0" className="form-input" value={form.quantity}
-              onChange={e => set('quantity', parseInt(e.target.value) || 0)} />
+            <label className="form-label">Supplier *</label>
+            <select className={`form-select ${errors.supplier_name ? 'form-input--error' : ''}`} 
+              value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)}>
+              <option value="">Select Supplier...</option>
+              {(suppliers || []).map(s => (
+                <option key={s.name} value={s.name}>{s.name}</option>
+              ))}
+            </select>
+            {errors.supplier_name && <span className="form-error">{errors.supplier_name}</span>}
           </div>
           <div className="form-group">
             <label className="form-label">Min Stock Threshold</label>
-            <input type="number" min="1" className="form-input" value={form.minStock}
-              onChange={e => set('minStock', parseInt(e.target.value) || 1)} />
+            <input type="number" min="1" className="form-input" value={form.min_threshold}
+              onChange={e => set('min_threshold', e.target.value)} />
           </div>
         </div>
+
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Category</label>
-            <select className="form-select" value={form.category} onChange={e => set('category', e.target.value)}>
-              <option value="">Select…</option>
-              {['Cables','Connectors','Power','Hardware','Enclosures','Network','Tools'].map(c => (
-                <option key={c} value={c}>{c}</option>
+            <select 
+              className="form-select" 
+              value={String(form.category_id || '')} 
+              onChange={e => set('category_id', e.target.value)}
+            >
+              <option value="">Select Category...</option>
+              {categories.map(c => (
+                <option key={String(c.id)} value={String(c.id)}>{c.name}</option>
               ))}
             </select>
           </div>
           <div className="form-group">
             <label className="form-label">Location</label>
-            <select className="form-select" value={form.location} onChange={e => set('location', e.target.value)}>
-              <option value="">Select…</option>
-              {['Warehouse A','Warehouse B','Service Center'].map(l => (
-                <option key={l} value={l}>{l}</option>
+            <select 
+              className="form-select" 
+              value={String(form.location_id || '')} 
+              onChange={e => set('location_id', e.target.value)}
+            >
+              <option value="">Select Location...</option>
+              {locations.map(l => (
+                <option key={String(l.id)} value={String(l.id)}>{l.name}</option>
               ))}
             </select>
           </div>
         </div>
+
+        {!isEdit && (
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Initial Quantity</label>
+              <input type="number" min="0" className="form-input" value={form.quantity}
+                onChange={e => set('quantity', e.target.value)} />
+            </div>
+            <div className="form-group" />
+          </div>
+        )}
 
         <div className="modal-actions">
           <button className="btn btn--secondary" onClick={onClose}>Cancel</button>
@@ -242,25 +310,38 @@ function ConsumableModal({ item, onClose, onSave }) {
 function ConsumablesPage() {
   const { can } = useAuth();
 
-  const [items,   setItems]   = useState(MOCK_CONSUMABLES);
-  const [loading, setLoading] = useState(false);
-  const [search,  setSearch]  = useState('');
+  const [items,      setItems]      = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [locations,  setLocations]  = useState([]);
+  const [suppliers,  setSuppliers]  = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [search,     setSearch]     = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
 
-  // Modals
-  const [addModal,     setAddModal]    = useState(false);
-  const [editItem,     setEditItem]    = useState(null);
+  const [addModal,     setAddModal]     = useState(false);
+  const [editItem,     setEditItem]     = useState(null);
   const [stockInItem,  setStockInItem] = useState(null);
-  const [issueItem,    setIssueItem]   = useState(null);
+  const [issueItem,    setIssueItem]    = useState(null);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
-        const data = await consumablesAPI.getAll();
-        setItems(data);
-      } catch { /* keep mock */ }
-      setLoading(false);
+        const [cData, catData, locData, supData] = await Promise.all([
+          consumablesAPI.getAll(),
+          categoriesAPI.getAll(),
+          locationsAPI.getAll(),
+          suppliersAPI.getAll()
+        ]);
+        setItems(cData || []);
+        setCategories(catData || []);
+        setLocations(locData || []);
+        setSuppliers(supData || []);
+      } catch (err) {
+        console.error("Fetch failed:", err);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -270,24 +351,16 @@ function ConsumablesPage() {
     const matchSearch = !q ||
       item.name?.toLowerCase().includes(q) ||
       item.sku?.toLowerCase().includes(q) ||
-      item.category?.toLowerCase().includes(q);
-    const status = getStockStatus(item.quantity, item.minStock).cls;
+      item.category?.toLowerCase().includes(q) ||
+      item.supplier_name?.toLowerCase().includes(q);
+    
+    const status = getStockStatus(item.quantity, item.min_threshold).cls;
     const matchStatus =
       filterStatus === 'all' ||
-      (filterStatus === 'low'  && (status === 'stock--low' || status === 'stock--out')) ||
-      (filterStatus === 'ok'   && status === 'stock--ok');
+      (filterStatus === 'low'   && (status === 'stock--low' || status === 'stock--out')) ||
+      (filterStatus === 'ok'    && status === 'stock--ok');
     return matchSearch && matchStatus;
   });
-
-  function handleStockChange(id, qty, direction) {
-    setItems(prev => prev.map(i =>
-      i.id === id
-        ? { ...i, quantity: direction === 'in' ? i.quantity + qty : Math.max(0, i.quantity - qty) }
-        : i
-    ));
-    setStockInItem(null);
-    setIssueItem(null);
-  }
 
   function handleSaved(saved) {
     setItems(prev => {
@@ -296,9 +369,11 @@ function ConsumablesPage() {
     });
     setAddModal(false);
     setEditItem(null);
+    setStockInItem(null);
+    setIssueItem(null);
   }
 
-  const lowCount = items.filter(i => i.quantity < i.minStock).length;
+  const lowCount = items.filter(i => i.is_low_stock).length;
 
   return (
     <div className="consumables-page">
@@ -320,7 +395,7 @@ function ConsumablesPage() {
       <div className="toolbar">
         <div className="search-box">
           <Search size={16} className="search-icon" />
-          <input type="text" placeholder="Search items, SKU, category…"
+          <input type="text" placeholder="Search items, SKU, supplier…"
             value={search} onChange={e => setSearch(e.target.value)} />
           {search && (
             <button className="search-clear" onClick={() => setSearch('')}><X size={14} /></button>
@@ -343,17 +418,14 @@ function ConsumablesPage() {
         <div className="consumables-grid">
           {[...Array(6)].map((_, i) => <div key={i} className="skeleton" style={{ height: 200 }} />)}
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <Package size={32} style={{ opacity: 0.2 }} />
-          <p>No items match your search</p>
-        </div>
       ) : (
         <div className="consumables-grid">
           {filtered.map(item => {
-            const { label, cls } = getStockStatus(item.quantity, item.minStock);
-            const pct = getStockPct(item.quantity, item.minStock);
-            const isLow = item.quantity < item.minStock;
+            const isLow = item.is_low_stock; 
+            const statusData = getStockStatus(item.quantity, item.min_threshold);
+            const label = statusData.label;
+            const cls = statusData.cls;
+            const pct = Math.min(100, Math.round((item.quantity / (item.min_threshold * 2)) * 100));
 
             return (
               <div key={item.id} className={`consumable-card ${isLow ? 'consumable-card--warning' : ''}`}>
@@ -368,6 +440,9 @@ function ConsumablesPage() {
 
                 <h3 className="consumable-name">{item.name}</h3>
                 <span className="consumable-sku">{item.sku}</span>
+                <span className="consumable-supplier" style={{fontSize: '12px', color: 'var(--color-text-secondary)'}}>
+                  {item.supplier?.name || item.supplier_name || 'N/A'}
+                </span>
 
                 <div className="consumable-quantity">
                   <span className="quantity-value">{item.quantity}</span>
@@ -380,7 +455,7 @@ function ConsumablesPage() {
 
                 <div className="consumable-footer">
                   <span className={`stock-status ${cls}`}>{label}</span>
-                  <span className="min-stock">Min: {item.minStock}</span>
+                  <span className="min-stock">Min: {item.min_threshold}</span>
                 </div>
 
                 <div className="consumable-meta">
@@ -415,10 +490,10 @@ function ConsumablesPage() {
         </div>
       )}
 
-      {addModal    && <ConsumableModal onClose={() => setAddModal(false)}  onSave={handleSaved} />}
-      {editItem    && <ConsumableModal item={editItem} onClose={() => setEditItem(null)} onSave={handleSaved} />}
-      {stockInItem && <StockInModal  item={stockInItem} onClose={() => setStockInItem(null)} onSave={handleStockChange} />}
-      {issueItem   && <IssueModal    item={issueItem}   onClose={() => setIssueItem(null)}   onSave={handleStockChange} />}
+      {addModal    && <ConsumableModal categories={categories} locations={locations} suppliers={suppliers} onClose={() => setAddModal(false)}  onSave={handleSaved} />}
+      {editItem    && <ConsumableModal item={editItem} categories={categories} locations={locations} suppliers={suppliers} onClose={() => setEditItem(null)} onSave={handleSaved} />}
+      {stockInItem && <StockInModal  item={stockInItem} onClose={() => setStockInItem(null)} onSave={handleSaved} />}
+      {issueItem   && <IssueModal    item={issueItem}   onClose={() => setIssueItem(null)}   onSave={handleSaved} />}
     </div>
   );
 }

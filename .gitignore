@@ -6,6 +6,7 @@ venv/
 # Database
 *.db
 instance/
+backend/dev.db
 
 # Environment
 .env

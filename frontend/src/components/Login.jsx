@@ -20,32 +20,38 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    
+    // Basic Client-side validation
     if (!form.email || !form.password) {
       setError('Please fill in both fields.');
       return;
     }
+
     setLoading(true);
     try {
-      // ── Try real backend first ──────────────────────────────────
+      // ─── AUTHENTIC BACKEND CALL ──────────────────────────────────
+      // This calls your Flask /api/login route
       const res = await authAPI.login(form);
+      
+      // 'res' should contain { user: {...}, token: "xxx.yyy.zzz" }
+      // The login function in AuthContext will now store the REAL JWT
       login(res.user, res.token);
+      
+      // Redirect to dashboard on success
       navigate('/');
-    } catch {
-      // ── Mock fallback while backend is not ready ────────────────
-      const mockUsers = [
-        { email: 'admin@inventory.local',   password: 'admin123',   user: { id: 1, name: 'Admin User',    role: 'admin',    email: 'admin@inventory.local' } },
-        { email: 'manager@inventory.local', password: 'manager123', user: { id: 2, name: 'Manager User',  role: 'manager',  email: 'manager@inventory.local' } },
-        { email: 'user@inventory.local',    password: 'user123',    user: { id: 3, name: 'End User',      role: 'end-user', email: 'user@inventory.local' } },
-      ];
-      const found = mockUsers.find(
-        u => u.email === form.email && u.password === form.password
-      );
-      if (found) {
-        login(found.user, 'mock-jwt-token-' + found.user.role);
-        navigate('/');
-      } else {
-        setError('Invalid email or password.');
-      }
+      
+    } catch (err) {
+      // ─── ERROR HANDLING ──────────────────────────────────────────
+      // We extract the specific error message from your Flask backend
+      const serverMessage = err.response?.data?.error || 
+                            err.response?.data?.message || 
+                            "Unable to connect to the authentication server.";
+      
+      setError(serverMessage);
+      console.error("Login attempt failed:", serverMessage);
+      
+      // IMPORTANT: Removed the mockUsers fallback. 
+      // If the backend says no, we no longer allow entry.
     } finally {
       setLoading(false);
     }
@@ -53,8 +59,7 @@ export default function Login() {
 
   return (
     <div className="login-shell">
-
-      {/* ── Left branding panel ─────────────────────────────────── */}
+      {/* ── Left branding panel (UI remains unchanged) ─────────── */}
       <div className="login-left">
         <div className="login-left__inner">
           <div className="login-brand">
@@ -93,7 +98,7 @@ export default function Login() {
         <div className="login-left__grid" aria-hidden />
       </div>
 
-      {/* ── Right form panel ────────────────────────────────────── */}
+      {/* ── Right form panel (Authentic Form) ───────────────────── */}
       <div className="login-right">
         <div className="login-card">
           <div className="login-card__header">
@@ -110,7 +115,7 @@ export default function Login() {
                 type="email"
                 autoComplete="email"
                 className="login-input"
-                placeholder="admin@inventory.local"
+                placeholder="Enter your work email"
                 value={form.email}
                 onChange={handleChange}
                 disabled={loading}
@@ -151,20 +156,19 @@ export default function Login() {
             )}
 
             <button type="submit" className="login-submit" disabled={loading}>
-              {loading ? <><span className="login-spinner" />Signing in…</> : <>Sign in <span>→</span></>}
+              {loading ? <><span className="login-spinner" />Authenticating…</> : <>Sign in <span>→</span></>}
             </button>
           </form>
 
-          {/* Dev credentials hint */}
+          {/* Optional: Keeping the helper buttons but removing the mock bypass logic */}
           <div className="login-hint">
-            <span className="login-hint__title">Dev credentials</span>
+            <span className="login-hint__title">Saved Credentials</span>
             <div className="login-hint__rows">
               {[
-                ['admin@inventory.local',   'admin123',   'admin'],
+                ['admin@inventory.local', 'admin123', 'admin'],
                 ['manager@inventory.local', 'manager123', 'manager'],
-                ['user@inventory.local',    'user123',    'end-user'],
               ].map(([email, pass, role]) => (
-                <button key={role} className="login-hint__row"
+                <button key={role} type="button" className="login-hint__row"
                   onClick={() => setForm({ email, password: pass })}>
                   <span className={`login-hint__role login-hint__role--${role}`}>{role}</span>
                   <span className="login-hint__email">{email}</span>
@@ -174,7 +178,6 @@ export default function Login() {
           </div>
         </div>
       </div>
-
     </div>
   );
 }

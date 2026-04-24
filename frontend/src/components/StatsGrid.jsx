@@ -1,72 +1,61 @@
-import React from 'react';
-import { Package, Boxes, MapPin, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Package, Boxes, MapPin, AlertTriangle } from 'lucide-react';
+import { dashboardAPI } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 import '../styling/StatsGrid.css';
 
-const stats = [
-  {
-    id: 1,
-    title: 'Total Assets',
-    value: '1,284',
-    change: '+12',
-    changeType: 'positive',
-    changeLabel: 'from last month',
-    icon: Package,
-    color: 'primary'
-  },
-  {
-    id: 2,
-    title: 'Consumables',
-    value: '3,847',
-    change: '-156',
-    changeType: 'negative',
-    changeLabel: 'items used',
-    icon: Boxes,
-    color: 'info'
-  },
-  {
-    id: 3,
-    title: 'Locations',
-    value: '24',
-    change: '+2',
-    changeType: 'positive',
-    changeLabel: 'new sites',
-    icon: MapPin,
-    color: 'success'
-  },
-  {
-    id: 4,
-    title: 'Active Alerts',
-    value: '7',
-    change: '+3',
-    changeType: 'warning',
-    changeLabel: 'need attention',
-    icon: AlertTriangle,
-    color: 'warning'
-  }
-];
-
 function StatsGrid() {
+  const [stats, setStats] = useState({ assets: 0, consumables: 0, locations: 0, alerts: 0 });
+  const [loading, setLoading] = useState(true);
+  const navigate      = useNavigate();
+
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const data = await dashboardAPI.getStats();
+        setStats(data);
+      } catch (err) {
+        console.error("Dashboard Stats Fetch Error:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchStats();
+  }, []);
+
+  if (loading) return <div className="stats-grid-loading">Loading Dashboard...</div>;
+
+  const cards = [
+    { title: 'Total Assets', value: stats.assets, icon: Package, color: 'primary', path: '/assets' },
+    { title: 'Consumables', value: stats.consumables, icon: Boxes, color: 'info', path: '/consumables' },
+    { title: 'Locations', value: stats.locations, icon: MapPin, color: 'success', path: '/locations' },
+    { title: 'Active Alerts', value: stats.alerts, icon: AlertTriangle, color: 'warning', path: '/alerts' }
+  ];
+
   return (
     <div className="stats-grid">
-      {stats.map((stat) => {
-        const Icon = stat.icon;
-        const TrendIcon = stat.changeType === 'positive' ? TrendingUp : 
-                          stat.changeType === 'negative' ? TrendingDown : AlertTriangle;
-        
+      {cards.map((item, idx) => {
+        const Icon = item.icon;
         return (
-          <div key={stat.id} className={`stat-card stat-card--${stat.color}`}>
+          /* 3. Attach the onClick to the div and add a 'pointer' cursor style in CSS */
+          <div 
+            key={idx} 
+            className={`stat-card stat-card--${item.color}`}
+            onClick={() => {
+              // FIX: Accessing 'path' because that is what we named it in the array
+              if (item.path) {
+                console.log(`Navigating to: ${item.path}`); 
+                navigate(item.path);
+              } else {
+                console.error("Navigation Error: Path is undefined for", item.title);
+              }
+            }}
+          >
             <div className="stat-header">
-              <span className="stat-title">{stat.title}</span>
-              <div className={`stat-icon stat-icon--${stat.color}`}>
-                <Icon size={20} />
-              </div>
+              <span className="stat-title">{item.title}</span>
+              <div className={`stat-icon stat-icon--${item.color}`}><Icon size={20} /></div>
             </div>
-            <div className="stat-value">{stat.value}</div>
-            <div className={`stat-change stat-change--${stat.changeType}`}>
-              <TrendIcon size={14} />
-              <span>{stat.change}</span>
-              <span className="stat-change-label">{stat.changeLabel}</span>
-            </div>
+            <div className="stat-value">{item.value?.toLocaleString() || 0}</div>
           </div>
         );
       })}

@@ -3,7 +3,10 @@ import re
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 from .models import db, flask_bcrypt 
+from dotenv import load_dotenv  # <--- ADD THIS
 
 def create_app():
     app = Flask(__name__)
@@ -11,8 +14,25 @@ def create_app():
     # ─── DATABASE CONFIGURATION ─────────────────────────────────
     # Supabase gives you a 'postgres://' URI, but SQLAlchemy 1.4+ 
     # requires 'postgresql://'. This fix ensures compatibility.
-    uri = os.environ.get('DATABASE_URL', 'sqlite:///../inventory.db')
-    if uri.startswith("postgres://"):
+    # Force SQLite if we are running in DEBUG mode locally
+
+    # Priority 1: Check for the environment variable (Supabase)
+    # Priority 2: Only use SQLite as a fallback if the Cloud URL is missing
+    uri = os.environ.get('DATABASE_URL')
+
+    if not uri:
+        # Final fallback if no environment variable is found
+        uri = 'sqlite:///dev.db'
+        print("--- 🏠 DATABASE: LOCAL (SQLite) accessed ---")
+    else:
+        # Cloud logging
+        db_host = uri.split('@')[-1].split('/')[0] if '@' in uri else "Supabase"
+        print(f"--- ☁️ DATABASE: CLOUD ({db_host}) accessed ---")
+
+    # ─── LOGGING THE SOURCE ─────────────────────────────────────
+   # ─── PROTOCOL FIX ──────────────────────────────────────────
+    # SQLAlchemy 1.4+ requires 'postgresql://' instead of 'postgres://'
+    if uri and uri.startswith("postgres://"):
         uri = uri.replace("postgres://", "postgresql://", 1)
     
     app.config['SQLALCHEMY_DATABASE_URI'] = uri
@@ -35,6 +55,9 @@ def create_app():
 
     # ─── BLUEPRINTS & TABLE CREATION ────────────────────────────
     with app.app_context():
+        # IMPORTANT: Import ALL models here so Alembic can see them
+        from . import models
+
         from .routes import api
         app.register_blueprint(api, url_prefix='/api')
         

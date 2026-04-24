@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { 
-  Menu, 
-  Search, 
-  Bell, 
-  X,
-  AlertTriangle,
-  Package,
-  Clock
+  Menu, Search, Bell, X, AlertTriangle, Package, Database, MapPin
 } from 'lucide-react';
+// Corrected Import
+import api, { dashboardAPI } from '../services/api'; 
+// Use the library we installed
+import { formatDistanceToNow } from 'date-fns'; 
 import '../styling/Header.css';
 
 const pageTitles = {
@@ -21,123 +19,119 @@ const pageTitles = {
   '/settings': 'Settings',
 };
 
-const mockNotifications = [
-  {
-    id: 1,
-    type: 'warning',
-    title: 'Low Stock Alert',
-    message: 'RG-6 Coax Cable below minimum threshold',
-    time: '5 min ago',
-    icon: AlertTriangle
-  },
-  {
-    id: 2,
-    type: 'info',
-    title: 'Asset Checked Out',
-    message: 'PTZ Camera #CAM-0042 assigned to John D.',
-    time: '1 hour ago',
-    icon: Package
-  },
-  {
-    id: 3,
-    type: 'warning',
-    title: 'Warranty Expiring',
-    message: '3 assets have warranties expiring this month',
-    time: '2 hours ago',
-    icon: Clock
-  }
-];
-
-function Header({ onMenuClick, collapsed }) {
+function Header({ onMenuClick }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const searchRef = useRef(null);
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
 
   const pageTitle = pageTitles[location.pathname] || 'Dashboard';
-  const unreadCount = mockNotifications.length;
+
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const data = await dashboardAPI.getAlerts();
+        setNotifications(data || []);
+      } catch (err) { console.error("Notification fetch failed", err); }
+    };
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (searchQuery.length > 1) {
+        try {
+          const res = await api.get(`/search?q=${searchQuery}`);
+          setSearchResults(res.data || res); 
+          setShowSearch(true);
+        } catch (err) { console.error("Search failed", err); }
+      } else {
+        setSearchResults([]);
+        setShowSearch(false);
+      }
+    }, 300);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
 
   return (
     <header className="header">
       <div className="header-left">
-        <button 
-          className="menu-toggle"
-          onClick={onMenuClick}
-          aria-label="Toggle menu"
-        >
-          <Menu size={20} />
-        </button>
+        <button className="menu-toggle" onClick={onMenuClick}><Menu size={20} /></button>
         <h1 className="header-title">{pageTitle}</h1>
       </div>
 
-      <div className="header-center">
+      <div className="header-center" ref={searchRef}>
         <div className="search-container">
           <Search size={18} className="search-icon" />
           <input
             type="text"
             className="search-input"
-            placeholder="Search assets, consumables, locations..."
+            placeholder="Search database..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => searchQuery.length > 1 && setShowSearch(true)}
           />
-          <span className="search-shortcut">
-            <kbd>Ctrl</kbd>
-            <kbd>K</kbd>
-          </span>
+          
+          {showSearch && searchResults.length > 0 && (
+            <div className="search-results-dropdown">
+              {searchResults.map((res, i) => (
+                <div key={i} className="search-result-item" onClick={() => {
+                  navigate(res.path);
+                  setShowSearch(false);
+                  setSearchQuery('');
+                }}>
+                  <div className="res-icon">
+                    {res.type === 'Asset' ? <Package size={14}/> : res.type === 'Location' ? <MapPin size={14}/> : <Database size={14}/>}
+                  </div>
+                  <div className="res-info">
+                    <span className="res-name">{res.name}</span>
+                    <span className="res-meta">{res.type} • {res.id}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="header-right">
         <div className="notifications-wrapper">
-          <button 
-            className={`notification-btn ${showNotifications ? 'active' : ''}`}
-            onClick={() => setShowNotifications(!showNotifications)}
-            aria-label="Notifications"
-          >
+          <button className={`notification-btn ${showNotifications ? 'active' : ''}`} onClick={() => setShowNotifications(!showNotifications)}>
             <Bell size={20} />
-            {unreadCount > 0 && (
-              <span className="notification-badge">{unreadCount}</span>
-            )}
+            {notifications.length > 0 && <span className="notification-badge">{notifications.length}</span>}
           </button>
 
           {showNotifications && (
             <div className="notifications-dropdown">
               <div className="notifications-header">
-                <span className="notifications-title">Notifications</span>
-                <button 
-                  className="notifications-close"
-                  onClick={() => setShowNotifications(false)}
-                >
-                  <X size={16} />
-                </button>
+                <span className="notifications-title">Critical Alerts</span>
+                <button onClick={() => setShowNotifications(false)}><X size={16} /></button>
               </div>
               <div className="notifications-list">
-                {mockNotifications.map((notification) => {
-                  const Icon = notification.icon;
-                  return (
-                    <div 
-                      key={notification.id} 
-                      className={`notification-item ${notification.type}`}
-                    >
-                      <div className="notification-icon">
-                        <Icon size={16} />
-                      </div>
+                {notifications.length === 0 ? <p className="empty-msg">No active alerts</p> : 
+                  notifications.map((n) => (
+                    <div key={n.id} className="notification-item warning">
+                      <div className="notification-icon"><AlertTriangle size={16} /></div>
                       <div className="notification-content">
-                        <span className="notification-item-title">
-                          {notification.title}
-                        </span>
-                        <span className="notification-message">
-                          {notification.message}
-                        </span>
+                        <span className="notification-item-title">Low Stock: {n.name}</span>
+                        {/* THE LIBRARY IS NOW USED HERE */}
                         <span className="notification-time">
-                          {notification.time}
+                          {formatDistanceToNow(new Date(n.updated_at || new Date()), { addSuffix: true })}
                         </span>
                       </div>
                     </div>
-                  );
-                })}
+                  ))
+                }
               </div>
-              <button className="notifications-view-all">
-                View all notifications
+              <button className="notifications-view-all" onClick={() => navigate('/activity')}>
+                View Activity Log
               </button>
             </div>
           )}
