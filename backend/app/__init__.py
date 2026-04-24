@@ -51,7 +51,15 @@ def create_app():
     # Locally we use localhost:3000. In production, we allow the Vercel domain.
     # Setting origins to '*' is easiest for the 'Show on the Road', 
     # but using environment variables is more professional.
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ["https://inventory-app-uc-ts-projects.vercel.app", "http://localhost:3000"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+            "expose_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
+        }
+    })
 
     # ─── BLUEPRINTS & TABLE CREATION ────────────────────────────
     with app.app_context():
