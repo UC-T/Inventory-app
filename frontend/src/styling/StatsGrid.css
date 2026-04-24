@@ -14,6 +14,7 @@
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
   transition: all var(--transition-fast);
+  pointer-events: auto !important;
 }
 
 .stat-card:hover {

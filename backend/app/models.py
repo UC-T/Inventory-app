@@ -100,6 +100,8 @@ class AssetItem(db.Model):
             "asset_id": self.asset_id,
             "name": self.name,
             "serial": self.serial,
+            "quantity": self.quantity,  # <--- MUST BE HERE
+            "price": self.price,        # <--- MUST BE HERE
             "status": self.status,
             "assigned_to": self.assigned_to,
             "ip_address": self.ip_address,
@@ -196,15 +198,35 @@ class User(db.Model):
 class AuditLog(db.Model):
     __tablename__ = 'audit_logs'
     id = db.Column(db.Integer, primary_key=True)
-
-    # Ensure 'users' matches the __tablename__ in your User model
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    action = db.Column(db.String(255), nullable=False) # e.g., "Deleted Location: Warehouse A"
+    action = db.Column(db.String(255), nullable=False)
     timestamp = db.Column(db.DateTime, default=db.func.now())
 
+    # Ensure this relationship exists to avoid "AttributeError"
+    user = db.relationship('User', backref='logs')
+
     def to_dict(self):
+        # Normalize action string for the UI logic
+        action_str = self.action.lower()
+        action_type = 'update' # default
+        
+        if any(word in action_str for word in ['added', 'created']): 
+            action_type = 'create'
+        elif 'issued' in action_str: 
+            action_type = 'checkout'
+        elif 'returned' in action_str: 
+            action_type = 'checkin'
+        elif 'deleted' in action_str: 
+            action_type = 'delete'
+        elif 'moved' in action_str: 
+            action_type = 'transfer'
+
         return {
             "id": self.id,
-            "action": self.action,
-            "timestamp": self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            "action": action_type,
+            "title": self.action.split(':')[0], 
+            "description": self.action,
+            "user": self.user.name if self.user else "System",
+            "timestamp": self.timestamp.isoformat(),
+            "icon": "Package" 
         }

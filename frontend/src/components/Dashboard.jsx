@@ -1,7 +1,7 @@
-// import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import StatsGrid    from './StatsGrid';
-import AlertsPanel  from './AlertsPanel';
+import StatsGrid from './StatsGrid';
+import AlertsPanel from './AlertsPanel';
 import ActivityFeed from './ActivityFeed';
 import QuickActions from './QuickActions';
 import '../styling/Dashboard.css';
@@ -29,18 +29,18 @@ function Dashboard() {
             })}
           </p>
           <span className={`role-badge role-badge--${user?.role}`}>
-            {user?.role}
+            {user?.role?.toUpperCase()}
           </span>
         </div>
-        {/* Only admin/manager see quick actions */}
         {(can('asset_create') || can('consumable_stockin')) && <QuickActions />}
       </div>
 
+      {/* StatsGrid now fetches its own data */}
       <StatsGrid />
 
       <div className="dashboard-grid">
         {/* Alerts only for admin/manager */}
-        {can('log_view') && <AlertsPanel />}
+        {can('log_view') ? <AlertsPanel /> : <div className="no-access">Activity logs restricted.</div>}
         <ActivityFeed />
       </div>
     </div>

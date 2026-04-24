@@ -25,7 +25,13 @@ function StockInModal({ item, onClose, onSave }) {
     setSaving(true);
     try {
       const updatedItem = await consumablesAPI.stockIn(item.id, { quantity: n, reason });
-      onSave(updatedItem);
+    
+      // Check if updatedItem actually exists before calling onSave
+      if (updatedItem) {
+        onSave(updatedItem); 
+      } else {
+        throw new Error("Empty response from server");
+      }
     } catch (error) {
       setErr('Failed to update stock in Supabase');
     } finally {
@@ -81,7 +87,13 @@ function IssueModal({ item, onClose, onSave }) {
     setSaving(true);
     try {
       const updatedItem = await consumablesAPI.issue(item.id, { quantity: n, reason, issued_to: issueTo });
-      onSave(updatedItem);
+    
+      // Check if updatedItem actually exists before calling onSave
+      if (updatedItem) {
+        onSave(updatedItem); 
+      } else {
+        throw new Error("Empty response from server");
+      }
     } catch (error) {
       setErr('Failed to issue stock from Supabase');
     } finally {

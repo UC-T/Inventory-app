@@ -9,6 +9,7 @@ from flask import send_file
 from flask_cors import CORS
 from datetime import timedelta, datetime
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func  # <--- THIS IS THE MISSING PIECE!
 import io
 import os
 
@@ -57,6 +58,8 @@ def add_item():
             name=data.get('name'),
             asset_id=data.get('asset_id'),
             supplier_name=data['supplier_name'],
+            quantity=int(data.get('quantity', 1)),
+            price=float(data.get('price', 0.0)),
             serial=data.get('serial'),
             status=data.get('status', 'available'),
             assigned_to=data.get('assigned_to'),
@@ -103,7 +106,8 @@ def update_asset_item(item_id): # Renamed to be safe
         if 'serial' in data: item.serial = data['serial']
         if 'status' in data: item.status = data['status']
         if 'assigned_to' in data: item.assigned_to = data['assigned_to']
-        
+        if 'quantity' in data: item.quantity = int(data['quantity'])
+        if 'price' in data: item.price = float(data['price'])
         # 2. Update Relationships (IDs)
         if 'category_id' in data: item.category_id = data['category_id']
         if 'location_id' in data: item.location_id = data['location_id']
@@ -231,35 +235,6 @@ def login():
         }), 200
 
     return jsonify({"error": "Invalid email or password"}), 401
-
-# ROUTE: Get Dashboard Data (Protected)
-@api.route('/dashboard', methods=['GET'])
-@jwt_required()
-def get_dashboard():
-    # 1. Fetch data
-    items = AssetItem.query.all()
-    consumables = Consumable.query.all()
-    
-    # 2. Logic for Low Stock Alerts
-    alerts = []
-    for item in items:
-        if item.quantity < 5: # Threshold for assets
-            alerts.append({"type": "Asset", "name": item.name, "qty": item.quantity})
-            
-    for con in consumables:
-        if con.quantity <= con.min_threshold:
-            alerts.append({"type": "Consumable", "name": con.name, "qty": con.quantity})
-
-    # 3. Structure the response
-    return jsonify({
-        "summary": {
-            "total_assets": len(items),
-            "total_consumables": len(consumables),
-            "total_alerts": len(alerts)
-        },
-        "alerts": alerts,
-        "recent_assets": [i.to_dict() for i in items[-5:]] # Show last 5 added
-    })
 
 @api.route('/categories', methods=['GET', 'POST'])
 @jwt_required()
@@ -408,161 +383,115 @@ def delete_location_by_id(loc_id):
             "details": str(e)
         }), 500
 
+# ─── 1. FETCH ALL & ADD NEW ──────────────────────────────────────
 @api.route('/consumables', methods=['GET', 'POST'])
 @jwt_required()
 def handle_consumables():
-    # ─── USE CASE 1: RETRIEVE ALL (GET) ──────────────────────────
     if request.method == 'GET':
         try:
             items = Consumable.query.all()
-            # ─── DEBUG PRINT ────────────────────────────────────
-            print(f"--- 📦 DATABASE FETCH: Found {len(items)} items in Supabase ---")
-            # ────────────────────────────────────────────────────
-            # Standardized to_dict() handles the conversion
             return jsonify([i.to_dict() for i in items]), 200
         except Exception as e:
-            print(f"--- ❌ GET CONSUMABLES FAILED: {str(e)} ---")
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "Fetch failed", "details": str(e)}), 500
 
-    # ─── USE CASE 2: ADD NEW (POST) ──────────────────────────────
     if request.method == 'POST':
         data = request.get_json()
-
-        # Validation: Standardizing keys
-        # We now accept 'min_threshold' directly from the frontend
         required = ['name', 'sku', 'supplier_name', 'quantity']
         if not data or not all(k in data for k in required):
-            return jsonify({"error": "Missing required fields", "required": required}), 400
+            return jsonify({"error": "Missing fields", "required": required}), 400
 
         try:
-            # Type Casting and Validation
-            qty = int(data.get('quantity', 0))
-            # Fallback for threshold to ensure no crash if field is named 'minStock'
-            threshold = int(data.get('min_threshold', data.get('minStock', 5)))
-
             new_con = Consumable(
                 name=data['name'].strip(),
                 sku=data['sku'].strip().upper(),
                 supplier_name=data['supplier_name'].strip(),
-                quantity=qty,
-                min_threshold=threshold,
+                quantity=int(data.get('quantity', 0)),
+                min_threshold=int(data.get('min_threshold', 10)),
                 category_id=data.get('category_id'),
                 location_id=data.get('location_id')
             )
-            update_master_sheet(data['name'], 'Consumable')
+            update_master_sheet(new_con.name, 'Consumable')
             db.session.add(new_con)
             
             # Audit Trail
-            log = AuditLog(
-                user_id=int(get_jwt_identity()),
-                action=f"Added Consumable: {new_con.name} (Qty: {qty})"
-            )
+            log = AuditLog(user_id=int(get_jwt_identity()), action=f"Created Consumable: {new_con.name}")
             db.session.add(log)
             
             db.session.commit()
             return jsonify(new_con.to_dict()), 201
-
         except IntegrityError:
             db.session.rollback()
-            return jsonify({"error": "Duplicate entry: Name or SKU already exists"}), 409
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({"error": "Database error", "details": str(e)}), 500
+            return jsonify({"error": "SKU already exists"}), 409
 
-# ─── DELETE ENTIRE ITEM (ADMIN ONLY) ──────────────────────────────
-@api.route('/consumables/<int:con_id>', methods=['DELETE'])
+# ─── 2. STOCK IN (ADD QUANTITY) ──────────────────────────────────
+@api.route('/consumables/<int:con_id>/stock-in', methods=['POST'])
 @jwt_required()
-@admin_required
-def delete_consumable_by_id(con_id):
-    # .get_or_404 already handles the "if not consumable" check automatically
-    consumable = Consumable.query.get_or_404(con_id)
-    
-    name_cache = consumable.name
-    db.session.delete(consumable)
-    db.session.commit()
-    
-    return jsonify({
-        "message": f"Consumable '{name_cache}' completely removed from database"
-    }), 200
-
-@api.route('/consumables/bulk-delete', methods=['POST'])
-@jwt_required()
-@admin_required
-def bulk_delete_consumables():
+def stock_in_consumable(con_id):
+    item = Consumable.query.get_or_404(con_id)
     data = request.get_json()
-    ids = data.get('ids', []) # Expected format: {"ids": [1, 2, 5]}
-    
-    if not ids:
-        return jsonify({"error": "No IDs provided"}), 400
-        
-    deleted_count = Consumable.query.filter(Consumable.id.in_(ids)).delete(synchronize_session=False)
-    db.session.commit()
-    
-    return jsonify({"message": f"Successfully deleted {deleted_count} items"}), 200
+    qty_to_add = int(data.get('quantity', 0))
+    reason = data.get('reason', 'N/A')
 
-# ─── DELETE BY QUANTITY (ISSUE / REDUCE STOCK) ───────────────────
-@api.route('/consumables/<int:con_id>/reduce', methods=['POST'])
+    if qty_to_add <= 0:
+        return jsonify({"error": "Quantity must be positive"}), 400
+
+    item.quantity += qty_to_add
+    log = AuditLog(user_id=int(get_jwt_identity()), action=f"Stock In: {item.name} +{qty_to_add} ({reason})")
+    db.session.add(log)
+    
+    db.session.commit()
+    return jsonify(item.to_dict()), 200
+
+# ─── 3. ISSUE STOCK (REMOVE QUANTITY) ────────────────────────────
+@api.route('/consumables/<int:con_id>/issue', methods=['POST'])
 @jwt_required()
-def update_consumable(con_id):
+def issue_consumable(con_id):
+    item = Consumable.query.get_or_404(con_id)
+    data = request.get_json()
+    qty_to_issue = int(data.get('quantity', 0))
+    issue_to = data.get('issued_to', 'Not specified')
+    reason = data.get('reason', 'N/A')
+
+    if qty_to_issue > item.quantity:
+        return jsonify({"error": f"Insufficient stock. Only {item.quantity} available."}), 400
+
+    item.quantity -= qty_to_issue
+    log = AuditLog(user_id=int(get_jwt_identity()), action=f"Issued: {item.name} -{qty_to_issue} to {issue_to}")
+    db.session.add(log)
+
+    db.session.commit()
+    return jsonify(item.to_dict()), 200
+
+# ─── 4. EDIT DETAILS (PUT) ───────────────────────────────────────
+@api.route('/consumables/<int:con_id>', methods=['PUT'])
+@jwt_required()
+def edit_consumable(con_id):
     item = Consumable.query.get_or_404(con_id)
     data = request.get_json()
 
     try:
-        # Update fields if they exist in the request
         if 'name' in data: item.name = data['name'].strip()
         if 'sku' in data: item.sku = data['sku'].strip().upper()
-        if 'quantity' in data: item.quantity = int(data['quantity'])
-        
-        # Consistent mapping for threshold
-        if 'min_threshold' in data or 'minStock' in data:
-            item.min_threshold = int(data.get('min_threshold', data.get('minStock')))
-
+        if 'supplier_name' in data: item.supplier_name = data['supplier_name']
+        if 'min_threshold' in data: item.min_threshold = int(data['min_threshold'])
         if 'category_id' in data: item.category_id = data['category_id']
         if 'location_id' in data: item.location_id = data['location_id']
 
         db.session.commit()
         return jsonify(item.to_dict()), 200
-
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Update failed", "details": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-# ─── UPDATE ENTIRE ITEM ──────────────────────────────
-@api.route('/consumables/<int:con_id>', methods=['PUT'])
+# ─── 5. DELETION (ADMIN ONLY) ────────────────────────────────────
+@api.route('/consumables/<int:con_id>', methods=['DELETE'])
 @jwt_required()
-def edit_consumable_details(con_id): # <--- NAME CHANGED TO PREVENT CRASH
-    # 1. Find the item or return 404
+@admin_required
+def delete_consumable(con_id):
     item = Consumable.query.get_or_404(con_id)
-    data = request.get_json()
-
-    try:
-        # 2. Update basic fields if they are in the request
-        if 'name' in data: 
-            item.name = data['name'].strip()
-        if 'sku' in data: 
-            item.sku = data['sku'].strip().upper()
-        if 'quantity' in data: 
-            item.quantity = int(data['quantity'])
-        
-        # 3. Use the standardized threshold name
-        if 'min_threshold' in data or 'minStock' in data:
-            item.min_threshold = int(data.get('min_threshold', data.get('minStock')))
-
-        # 4. THE FIX: Update Category and Location IDs
-        # This allows you to change their "home" at will
-        if 'category_id' in data: 
-            item.category_id = data['category_id']
-        if 'location_id' in data: 
-            item.location_id = data['location_id']
-
-        db.session.commit()
-        
-        # 5. Return the updated object (including the new names via to_dict)
-        return jsonify(item.to_dict()), 200
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": "Update failed", "details": str(e)}), 500
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify({"message": "Item deleted"}), 200
 
 # ─── SUPPLIER ROUTES ──────────────────────────────────────────────
 @api.route('/suppliers', methods=['GET', 'POST'])
@@ -657,7 +586,95 @@ def get_master_sheet():
     except Exception as e:
         return jsonify({"error": "Could not fetch Master Sheet", "details": str(e)}), 500
 
-# --- ROUTE TO SETUP DUMMY DATA (For Testing) ---
+# ─── DASHBOARD STATS (For Summary Cards) ─────────────────────────────
+@api.route('/dashboard/stats', methods=['GET'])
+@jwt_required()
+def get_dashboard_stats():
+    try:
+        # Live counts from Supabase
+        assets_count = AssetItem.query.count()
+        locations_count = Location.query.count()
+        
+        # Safe sum: handle case where there are no consumables
+        consumables_sum = db.session.query(func.sum(Consumable.quantity)).scalar()
+        if consumables_sum is None:
+            consumables_sum = 0
+            
+        # Items below or at threshold
+        alerts_count = Consumable.query.filter(Consumable.quantity <= Consumable.min_threshold).count()
+
+        return jsonify({
+            "assets": assets_count,
+            "consumables": int(consumables_sum),
+            "locations": locations_count,
+            "alerts": alerts_count
+        }), 200
+    except Exception as e:
+        print(f"DASHBOARD ERROR: {str(e)}") # This shows up in your terminal
+        return jsonify({"error": str(e)}), 500
+
+# ─── DASHBOARD ALERTS (Top 5 Low Stock Items) ─────────────────────────────
+@api.route('/dashboard/alerts', methods=['GET'])
+@jwt_required()
+def get_dashboard_alerts():
+    # Fetch top 5 items that need attention
+    low_stock_items = Consumable.query.filter(Consumable.quantity <= Consumable.min_threshold).limit(5).all()
+    return jsonify([item.to_dict() for item in low_stock_items]), 200
+
+@api.route('/dashboard/activity', methods=['GET'])
+@jwt_required()
+def get_recent_activity():
+    try:
+        # Fetch the 10 most recent logs, joined with user to get the name
+        logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(10).all()
+        
+        return jsonify([{
+            "id": log.id,
+            "action": log.action, # This should be the full description string
+            "user": log.user.name if log.user else "System",
+            "timestamp": log.timestamp.isoformat()
+        } for log in logs]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ─── ALL ACTIVITY LOGS (For Admins) ─────────────────────────────
+@api.route('/logs', methods=['GET'])
+@jwt_required()
+def get_all_logs():
+    try:
+        # Fetch all logs, newest first
+        logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
+        return jsonify([log.to_dict() for log in logs]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ─── GLOBAL SEARCH (Assets, Consumables, Locations) ─────────────────────────────
+@api.route('/search', methods=['GET'])
+@jwt_required()
+def global_search():
+    q = request.args.get('q', '').lower()
+    if len(q) < 2: return jsonify([]), 200
+
+    results = []
+
+    # Search Assets
+    assets = AssetItem.query.filter(
+        (AssetItem.name.ilike(f'%{q}%')) | (AssetItem.asset_id.ilike(f'%{q}%'))
+    ).limit(3).all()
+    for a in assets:
+        results.append({"type": "Asset", "name": a.name, "id": a.asset_id, "path": "/assets"})
+
+    # Search Consumables
+    consumables = Consumable.query.filter(Consumable.name.ilike(f'%{q}%')).limit(3).all()
+    for c in consumables:
+        results.append({"type": "Consumable", "name": c.name, "id": f"Qty: {c.quantity}", "path": "/consumables"})
+
+    # Search Locations
+    locations = Location.query.filter(Location.name.ilike(f'%{q}%')).limit(3).all()
+    for l in locations:
+        results.append({"type": "Location", "name": l.name, "id": "Site", "path": "/locations"})
+
+    return jsonify(results), 200
 
 # 6. Run the app
 if __name__ == '__main__':

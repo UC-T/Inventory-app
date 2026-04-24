@@ -80,6 +80,10 @@ export const consumablesAPI = {
   create:   (data)   => api.post('/consumables', data),
   update:   (id, data)=> api.put(`/consumables/${id}`, data),
   delete:   (id)     => api.delete(`/consumables/${id}`),
+
+  // ADD THESE TWO METHODS:
+  stockIn:  (id, data) => api.post(`/consumables/${id}/stock-in`, data),
+  issue:    (id, data) => api.post(`/consumables/${id}/issue`, data),
 };
 
 // ═══════════════════════════════════════════════════════════════════

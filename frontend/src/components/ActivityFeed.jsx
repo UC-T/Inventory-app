@@ -1,90 +1,83 @@
-import React from 'react';
-import { UserCheck, MapPin, Plus, Edit, Trash2, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { UserCheck, MapPin, Plus, Edit, Trash2, ChevronRight, Activity } from 'lucide-react';
+import { logsAPI } from '../services/api';
+// 1. Import the relative time function
+import { formatDistanceToNow } from 'date-fns'; 
 import '../styling/ActivityFeed.css';
 
-const activities = [
-  {
-    id: 1,
-    action: 'checkout',
-    title: 'Asset Checked Out',
-    description: 'PTZ Camera #CAM-0042 assigned to John Davidson',
-    user: 'Sarah Miller',
-    time: '10 minutes ago',
-    icon: UserCheck
-  },
-  {
-    id: 2,
-    action: 'create',
-    title: 'New Asset Added',
-    description: 'Thermal Imaging Camera added to inventory',
-    user: 'Admin User',
-    time: '45 minutes ago',
-    icon: Plus
-  },
-  {
-    id: 3,
-    action: 'transfer',
-    title: 'Location Transfer',
-    description: '15 items moved from Warehouse A to Site #12',
-    user: 'Mike Johnson',
-    time: '2 hours ago',
-    icon: MapPin
-  },
-  {
-    id: 4,
-    action: 'update',
-    title: 'Inventory Updated',
-    description: 'RG-6 Coax Cable quantity adjusted (-50 units)',
-    user: 'Sarah Miller',
-    time: '3 hours ago',
-    icon: Edit
-  },
-  {
-    id: 5,
-    action: 'delete',
-    title: 'Asset Decommissioned',
-    description: 'Old DVR Unit #DVR-0012 marked as disposed',
-    user: 'Admin User',
-    time: '5 hours ago',
-    icon: Trash2
-  }
-];
+const getActionMeta = (actionStr) => {
+  const a = actionStr.toLowerCase();
+  if (a.includes('added') || a.includes('created')) return { icon: Plus, cls: 'create' };
+  if (a.includes('issued') || a.includes('checkout')) return { icon: UserCheck, cls: 'checkout' };
+  if (a.includes('moved') || a.includes('transfer')) return { icon: MapPin, cls: 'transfer' };
+  if (a.includes('deleted') || a.includes('removed')) return { icon: Trash2, cls: 'delete' };
+  return { icon: Edit, cls: 'update' };
+};
 
 function ActivityFeed() {
+  const [activities, setActivities] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadActivity() {
+      try {
+        const data = await logsAPI.getAll({ limit: 10 });
+        setActivities(data || []);
+      } catch (err) {
+        console.error("Failed to fetch activity:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadActivity();
+  }, []);
+
+  if (loading) return <div className="skeleton-activity" style={{height: '300px'}} />;
+
   return (
     <div className="activity-feed">
       <div className="panel-header">
         <h3 className="panel-title">Recent Activity</h3>
-        <button className="panel-action">
-          View All <ChevronRight size={16} />
-        </button>
+        <button className="panel-action">View All <ChevronRight size={16} /></button>
       </div>
 
       <div className="activity-list">
-        {activities.map((activity, index) => {
-          const Icon = activity.icon;
-          return (
-            <div key={activity.id} className="activity-item">
-              <div className="activity-timeline">
-                <div className={`activity-dot activity-dot--${activity.action}`}>
-                  <Icon size={14} />
+        {activities.length === 0 ? (
+          <div className="empty-state">
+             <Activity size={24} style={{opacity: 0.2}} />
+             <p>No recent activity recorded.</p>
+          </div>
+        ) : (
+          activities.map((log, index) => {
+            const meta = getActionMeta(log.action);
+            const Icon = meta.icon;
+            
+            return (
+              <div key={log.id} className="activity-item">
+                <div className="activity-timeline">
+                  <div className={`activity-dot activity-dot--${meta.cls}`}>
+                    <Icon size={14} />
+                  </div>
+                  {index < activities.length - 1 && <div className="activity-line" />}
                 </div>
-                {index < activities.length - 1 && <div className="activity-line" />}
-              </div>
-              <div className="activity-content">
-                <div className="activity-header">
-                  <span className={`activity-badge activity-badge--${activity.action}`}>
-                    {activity.action}
-                  </span>
-                  <span className="activity-time">{activity.time}</span>
+                
+                <div className="activity-content">
+                  <div className="activity-header">
+                    <span className={`activity-badge activity-badge--${meta.cls}`}>
+                      {meta.cls.toUpperCase()}
+                    </span>
+                    {/* 2. Implementation: formatDistanceToNow turns the ISO date into "X ago" */}
+                    <span className="activity-time">
+                      {formatDistanceToNow(new Date(log.timestamp), { addSuffix: true })}
+                    </span>
+                  </div>
+                  <span className="activity-description">{log.action}</span>
+                  <span className="activity-user">by {log.user}</span>
                 </div>
-                <span className="activity-title">{activity.title}</span>
-                <span className="activity-description">{activity.description}</span>
-                <span className="activity-user">by {activity.user}</span>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );
