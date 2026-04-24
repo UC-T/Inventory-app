@@ -63,6 +63,6 @@ def create_app():
         
         # This will automatically create your tables in Supabase 
         # the very first time the app runs on Vercel.
-        # db.create_all()
+        # db.create_all() <-- Comment this out once your initial tables are live
 
     return app
